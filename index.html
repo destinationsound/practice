@@ -4,9 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="BETR">
+<meta name="application-name" content="BETR">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#2A1114">
-<title>Practice v4.4</title>
+<title>BETR</title>
 <style>
   :root{
     --canvas:#2A1114; --canvas-deep:#1C0A0D; --surface:#3A181C; --line:#54262A;
@@ -206,7 +208,7 @@
 
 <div class="top">
   <button class="iconbtn" id="back" aria-label="Back" hidden>‹</button>
-  <h1 id="title">Practice</h1>
+  <h1 id="title">BETR</h1>
 </div>
 
 <main>
@@ -268,7 +270,7 @@
     <div id="importPanel" hidden></div>
     <p class="note">A backup holds your exercises, history, movements and settings. Importing adds what is missing and never deletes anything you already have — safe to run on a fresh copy of the app.</p>
 
-    <p class="note" style="margin-top:28px">Practice v${APP_VERSION}</p>
+    <p class="note" style="margin-top:28px">BETR · v${APP_VERSION}</p>
   </div></section>
 
   <section class="screen sessionScreen" id="s-med">
@@ -536,7 +538,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '4.4';
+const APP_VERSION = '4.8';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -881,7 +883,7 @@ function commitSession(rec){
   return rec;
 }
 function holdScreen(){
-  holdScreen();
+  if(navigator.wakeLock) navigator.wakeLock.request('screen').then(w=>{ wakeLock = w; }).catch(()=>{});
 }
 function releaseScreen(){
   try{ wakeLock && wakeLock.release(); }catch(e){}
@@ -942,7 +944,7 @@ function applyBackup(found, withSettings){
 let screen = 'home', cur = null, editing = null;
 /* Screens injected by a module can register where Back returns to. */
 const BACKTO = {};
-const TITLES = {home:'Practice', stats:'Stats', settings:'Settings', newtype:'New exercise', exercise:'Exercise', editor:'Edit', med:'Meditation', log:'Log a session', preset:'Choose a plan'};
+const TITLES = {home:'BETR', stats:'Stats', settings:'Settings', newtype:'New exercise', exercise:'Exercise', editor:'Edit', med:'Meditation', log:'Log a session', preset:'Choose a plan'};
 
 function show(name){
   screen = name;
@@ -952,7 +954,7 @@ function show(name){
   const rooted = ['home','stats','settings'].includes(name);
   el('back').hidden = rooted;
   el('back').textContent = (name === 'editor') ? '✕' : '‹';
-  el('title').textContent = name === 'editor' && editing && editing.isNew ? 'New exercise' : (TITLES[name] || 'Practice');
+  el('title').textContent = name === 'editor' && editing && editing.isNew ? 'New exercise' : (TITLES[name] || 'BETR');
   document.querySelectorAll('.nav button').forEach(b=>{
     const on = b.dataset.tab === name || (!rooted && name !== 'session' && b.dataset.tab === 'home');
     b.setAttribute('aria-current', on ? 'page' : 'false');
@@ -1449,6 +1451,7 @@ function scheduleSit(remainingSec, withOpening){
 
 function startMed(){
   running = true;
+  runToken++;
   resetPause();
   live = {start: Date.now(), completed:false};
   holdScreen();
@@ -1498,6 +1501,7 @@ el('medPause').addEventListener('click', ()=>pauseMed(!paused));
 
 function finishMed(silence){
   running = false;
+  runToken++;
   setPaused(false);
   el('medPause').hidden = true;
   clearInterval(medTimer); medTimer = null;
@@ -1631,6 +1635,13 @@ let running = false, round = 1, remain = 0, tick = null, wakeLock = null, live =
 /* Pause freezes every clock at once — the round, the reset countdown
    and the session total. What gets logged is time worked, so a 30
    minute workout interrupted for half an hour is still 30 minutes. */
+/* A stopped loop can still be sitting on an await. If another session
+   starts before it wakes, the shared `running` flag makes it believe it
+   is still live — a Muay Thai loop once resumed inside a meditation.
+   Each run carries a token so an old loop can recognise itself. */
+let runToken = 0;
+const alive = tok => running && tok === runToken;
+
 let paused = false, pauseStarted = 0, pausedTotal = 0, resumers = [];
 function gate(){ return paused ? new Promise(r=>resumers.push(r)) : Promise.resolve(); }
 function setPaused(on){
@@ -1658,15 +1669,17 @@ function openSession(){
 function start(){
   running = true;
   round = 1;
+  const tok = ++runToken;
   resetPause();
   live = {start: Date.now(), rounds:0, combos:0, strikes:0};
   go().textContent = 'Stop'; go().classList.add('stop');
   const pb = el('pauseBtn'); pb.hidden = false; pb.textContent = 'Pause';
   holdScreen();
-  loop();
+  loop(tok);
 }
 function stop(){
   running = false;
+  runToken++;                 // retire any loop still suspended
   setPaused(false);
   cancelWaits();
   el('pauseBtn').hidden = true;
@@ -1680,8 +1693,8 @@ function stop(){
   releaseScreen();
   endSession();
 }
-async function loop(){
-  while(running){
+async function loop(tok){
+  while(alive(tok)){
     if(S.useRounds){
       el('phase').textContent = `Round ${round} of ${S.rounds}`;
       startClock(S.roundLen);
@@ -1691,8 +1704,8 @@ async function loop(){
       el('phase').textContent = 'Working';
       el('clock').textContent = '∞';
     }
-    while(running && (!S.useRounds || remain > 0)){ await gate(); if(!running) return; await callout(); }
-    if(!running) return;
+    while(alive(tok) && (!S.useRounds || remain > 0)){ await gate(); if(!alive(tok)) return; await callout(tok); }
+    if(!alive(tok)) return;
 
     stopClock();
     bell(2);
@@ -1707,14 +1720,15 @@ async function loop(){
     await say('Rest');
     startClock(S.breakLen);
     setRope(S.breakLen, 1);
-    while(running && remain > 0){ await gate(); await wait(200); }
-    if(!running) return;
+    while(alive(tok) && remain > 0){ await gate(); await wait(200); }
+    if(!alive(tok)) return;
     stopClock(); setRope(0,0);
     el('statusL').textContent = '';
     round++;
   }
 }
-async function callout(){
+async function callout(tok){
+  if(!alive(tok)) return;
   const combo = buildCombo();
   if(!combo.length){ el('statusL').textContent = 'Turn on a technique group'; await wait(800); return; }
   render(combo);
@@ -1724,19 +1738,19 @@ async function callout(){
   const L = sides();
   for(let i=0;i<combo.length;i++){
     await gate();
-    if(!running) return;
+    if(!alive(tok)) return;
     highlight(i);
     await say(spoken(combo[i], L));
-    if(!running) return;
+    if(!alive(tok)) return;
     if(i < combo.length-1 && S.gap > 0) await wait(S.gap*1000);
   }
-  if(!running) return;
+  if(!alive(tok)) return;
   highlight(-1);
   el('statusL').textContent = 'Reset';
   /* driven by the loop rather than a CSS transition, so it freezes too */
   const total = S.rest*1000;
   let left = total;
-  while(running && left > 0){
+  while(alive(tok) && left > 0){
     await wait(100);
     if(paused) continue;
     left -= 100;
@@ -1983,7 +1997,7 @@ el('exportics').addEventListener('click', ()=>{
     `DESCRIPTION:${(typeOf(s.type).name + (sessionLine(s) ? ' — ' + sessionLine(s) : '')).replace(/[,;\\]/g,' ')}`,
     'END:VEVENT'
   ].join('\r\n')).join('\r\n');
-  const ics = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Practice//EN','CALSCALE:GREGORIAN', body, 'END:VCALENDAR'].join('\r\n');
+  const ics = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//BETR//EN','CALSCALE:GREGORIAN', body, 'END:VCALENDAR'].join('\r\n');
   const url = URL.createObjectURL(new Blob([ics], {type:'text/calendar'}));
   const a = document.createElement('a');
   a.href = url; a.download = 'practice-sessions.ics';
@@ -2165,7 +2179,7 @@ el('doExport').addEventListener('click', ()=>{
   const blob = new Blob([JSON.stringify(buildBackup(), null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = `practice-backup-${stamp}.json`;
+  a.href = url; a.download = `betr-backup-${stamp}.json`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 4000);
 });
@@ -2181,7 +2195,7 @@ el('importFile').addEventListener('change', e=>{
     try{ found = inspectBackup(JSON.parse(reader.result)); }catch(err){ found = null; }
     panel.hidden = false;
     if(!found){
-      panel.innerHTML = `<p class="note">That does not look like a Practice backup.</p>`;
+      panel.innerHTML = `<p class="note">That does not look like a BETR backup.</p>`;
       return;
     }
     const extraLine = Object.keys(found.extra)
@@ -2261,6 +2275,9 @@ el('test').addEventListener('click', ()=>{
     note.textContent = 'Listening for output…';
   }catch(e){ note.textContent = 'Speech is unavailable in this browser.'; }
 });
+
+
+
 
 
 
@@ -2494,6 +2511,94 @@ EXPORTERS.movements = {
   }
 };
 
+/* ── per-movement history ──────────────────────────────────────
+   Movements are global objects, so a movement's record spans every
+   workout it appears in. "Previous" stays scoped to one workout
+   because order and rest change what you can lift; history is not,
+   because your best bench is your best bench. */
+const histScreen = mk('mvhist', `<div class="scroll" id="histBody"></div>`);
+let histFrom = 'lift';
+
+const rungIndex = (m, lvl) => m.ladder ? Math.max(0, m.ladder.indexOf(lvl)) : 0;
+const e1rm = st => st.load ? Math.round(st.load * (1 + (st.reps||0)/30)) : 0;
+
+function bestSet(m, sets){
+  let best = null;
+  for(const st of sets){
+    if(!best){ best = st; continue; }
+    if(m.measure === 'weight'){
+      if(st.load > best.load || (st.load === best.load && st.reps > best.reps)) best = st;
+    } else if(m.measure === 'level'){
+      const a = rungIndex(m, st.level), b = rungIndex(m, best.level);
+      if(a > b || (a === b && ((st.load||0) > (best.load||0)
+        || ((st.load||0) === (best.load||0) && st.reps > best.reps)))) best = st;
+    } else if(st.reps > best.reps) best = st;
+  }
+  return best;
+}
+function setText(m, st){
+  if(!st) return '—';
+  if(m.measure === 'time') return `${st.reps}s`;
+  if(m.measure === 'level') return `${st.reps} × ${esc(st.level || '—')}${st.load ? ` +${fromLb(st.load)}` : ''}`;
+  return `${st.reps} × ${fromLb(st.load)} ${unitName().toLowerCase()}`;
+}
+function movementHistory(mid){
+  const rows = [];
+  sessions.filter(s=>s.type === 'strength' && s.detail && Array.isArray(s.detail.items))
+    .forEach(s=>{
+      const it = s.detail.items.find(i=>i.movementId === mid);
+      if(it && it.sets && it.sets.length) rows.push({start:s.start, name:s.name, sets:it.sets});
+    });
+  rows.sort((a,b)=>b.start - a.start);
+  return rows;
+}
+
+function openHistory(mid, from){
+  histFrom = from || 'lift';
+  BACKTO.mvhist = histFrom;
+  const m = moveOf(mid);
+  const rows = movementHistory(mid);
+  const tops = rows.map(r=>({start:r.start, name:r.name, top:bestSet(m, r.sets)})).filter(x=>x.top);
+  const allTime = bestSet(m, rows.flatMap(r=>r.sets));
+
+  /* what counts as progress differs by how the movement is measured */
+  const metric = st => m.measure === 'weight' ? (e1rm(st) || st.load || 0)
+                : m.measure === 'level' ? (rungIndex(m, st.level) + 1) * 100 + Math.min(99, st.reps || 0)
+                : (st.reps || 0);
+  const chart = tops.slice(0, 12).reverse();
+  const peak = Math.max(1, ...chart.map(x=>metric(x.top)));
+  const bars = chart.map(x=>`<div><b></b>
+      <i class="ph" style="height:${Math.max(4, (metric(x.top)/peak)*100)}%"></i></div>`).join('');
+
+  const facts = [
+    [rows.length ? setText(m, tops[0].top) : '—', 'Last top set'],
+    [allTime ? setText(m, allTime) : '—', m.measure === 'level' ? 'Best rung' : 'Best set'],
+  ];
+  if(m.measure === 'weight') facts.push([allTime ? fromLb(e1rm(allTime)) : '—', 'Best est. 1RM']);
+  facts.push([rows.length, 'Sessions']);
+
+  el('histBody').innerHTML = `
+    <p class="eyebrow">${esc((GROUPS.find(g=>g[0]===m.group)||['','—'])[1])} · ${
+      m.measure === 'weight' ? 'reps and weight' : m.measure === 'level' ? 'progression levels' : 'held for time'}</p>
+    <h2 class="hero" style="font-size:clamp(2rem,10vw,3rem)">${esc(m.name)}</h2>
+    ${rows.length ? '' : '<p class="empty">No history yet. It appears here once you log this movement.</p>'}
+    ${rows.length ? `<div class="facts">${facts.map(f=>
+      `<div class="fact"><b style="font-size:19px">${f[0]}</b><span>${esc(f[1])}</span></div>`).join('')}</div>` : ''}
+    ${chart.length > 1 ? `<div class="bars" style="height:110px">${bars}</div>
+      <p class="note" style="margin:-4px 0 22px">${
+        m.measure === 'weight' ? 'Estimated one-rep max, oldest to newest'
+        : m.measure === 'level' ? 'Rung reached, oldest to newest'
+        : 'Best hold, oldest to newest'}</p>` : ''}
+    ${rows.map(r=>`
+      <div class="sess">
+        <div class="when">${esc(r.name)}
+          <small>${new Date(r.start).toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'})} · ${
+            r.sets.map(st=>setText(m, st)).join(' · ')}</small>
+        </div>
+      </div>`).join('')}`;
+  show('mvhist');
+}
+
 BACKTO.pick = 'editor';   // the picker returns to the editor, draft intact
 TITLES.lift = 'Workout';
 TITLES.pick = 'Add movement';
@@ -2543,7 +2648,7 @@ T.editorWire = (c, api) => {
       const m = moveOf(it.movementId);
       return `<div class="row" style="align-items:flex-start">
         <span class="grow">
-          <span class="name">${esc(m.name)}</span>
+          <button class="name" data-ehist="${esc(it.movementId)}" style="text-align:left">${esc(m.name)} <span style="opacity:.45;font-size:14px">›</span></button>
           <span class="sub">${esc((GROUPS.find(g=>g[0]===m.group)||['','—'])[1])} · ${it.sets} sets${it.rest?` · ${it.rest}s rest`:''}</span>
           <span class="stepper" style="margin-top:10px">
             <button data-dec="${i}">−</button><b>${it.sets}</b><button data-inc="${i}">+</button>
@@ -2557,6 +2662,8 @@ T.editorWire = (c, api) => {
   };
   paint();
   el('liftItems').addEventListener('click', ev=>{
+    const eh = ev.target.closest('[data-ehist]');
+    if(eh) return openHistory(eh.dataset.ehist, 'editor');
     const b = ev.target.closest('button'); if(!b) return;
     const d = b.dataset;
     if(d.inc !== undefined) c.items[+d.inc].sets = Math.min(12, c.items[+d.inc].sets + 1);
@@ -2782,7 +2889,7 @@ function renderLift(){
         <button class="ck" data-ck="${ii}.${si}" aria-pressed="${st.done}">${st.done?'✓':''}</button>`;
     }).join('');
     return `<div class="liftCard">
-      <div class="liftHead"><span class="nm">${esc(m.name)}</span>
+      <div class="liftHead"><button class="nm" data-hist="${esc(it.movementId)}" style="text-align:left">${esc(m.name)} <span style="opacity:.45;font-size:13px">›</span></button>
         <span class="grp">${esc((GROUPS.find(g=>g[0]===m.group)||['','—'])[1])}</span></div>
       <span class="restPill"><button data-rest="${ii}" data-step="down" aria-label="Less rest">−</button><b>⏱ ${it.rest}s</b><button data-rest="${ii}" data-step="up" aria-label="More rest">+</button></span>
       <div class="setGrid">
@@ -2814,8 +2921,19 @@ function renderLift(){
     ${cards}
     <button class="primary" id="finishLift" style="margin-top:26px">${draft.backdate ? 'Save workout' : 'Finish workout'}</button>
     ${draft.backdate ? '' : `<button class="ghost" id="pauseLift">${paused ? 'Resume' : 'Pause'}</button>`}
+    ${draft.backdate ? `<button class="ghost" id="timeInstead">Don't remember the numbers? Log the time instead</button>` : ''}
     <button class="ghost danger" id="cancelLift">Discard</button>`;
 
+  if(draft.backdate){
+    el('timeInstead').addEventListener('click', ()=>{
+      /* Hand the entry to the duration form instead. The half-filled
+         table is dropped on purpose — it is being replaced, not lost
+         to a mistap, and the button says exactly that. */
+      write(K_PAST, null); draft = null;
+      stopRest(); stopElapsed();
+      openLog(cur.id, null);
+    });
+  }
   if(!draft.backdate){
     el('pauseLift').addEventListener('click', ()=>{
       const to = !paused;
@@ -2980,7 +3098,9 @@ function finishLift(){
     if(btn){
       if(btn.dataset.armed !== '1'){
         btn.dataset.armed = '1';
-        btn.textContent = 'No sets logged — tap again to end anyway';
+        btn.textContent = draft && draft.backdate
+          ? 'No sets logged — tap again, or log the time instead below'
+          : 'No sets logged — tap again to end anyway';
         setTimeout(()=>{ btn.dataset.armed = '0';
           btn.textContent = draft && draft.backdate ? 'Save workout' : 'Finish workout'; }, 5000);
         return;
