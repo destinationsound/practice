@@ -567,7 +567,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '5.3';
+const APP_VERSION = '5.4';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -1048,7 +1048,16 @@ function balanceBlock(){
 function todayBlock(){
   const now = new Date();
   const planned = plannedFor(now);
-  if(!planned.length) return '';
+  if(!exercises.length) return '';
+  if(!planned.length){
+    /* Hiding this when nothing is scheduled meant nobody ever found
+       out schedules existed. An empty rest day is worth saying. */
+    const anyScheduled = exercises.some(e=>e.sched && e.sched.days && e.sched.days.length);
+    return `<h2 class="grp" style="margin-top:0">Today</h2>
+      <div class="nothing">${anyScheduled
+        ? 'Nothing scheduled — rest day.'
+        : 'Nothing scheduled yet. Open an exercise, tap Edit, and pick your repeat days.'}</div>`;
+  }
   const left = planned.filter(e=>!didOn(e.id, now)).length;
   return `<h2 class="grp" style="margin-top:0">Today${left ? '' : ' · all done'}</h2>`
     + planned.map(e=>{
