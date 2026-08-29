@@ -567,7 +567,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '5.2';
+const APP_VERSION = '5.3';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -911,7 +911,10 @@ function makeSession(ex, f){
 const MIN_SESSION = 5;
 function commitSession(rec){
   if(!rec) return null;
-  if(!(rec.dur >= MIN_SESSION)){ lastDiscard = rec.dur|0; return null; }
+  /* A written entry has no duration — its worth is that it exists.
+     Only timed types can be "too short". */
+  const floor = typeOf(rec.type).kind === 'written' ? 0 : MIN_SESSION;
+  if(!(rec.dur >= floor)){ lastDiscard = rec.dur|0; return null; }
   sessions.push(rec);
   saveSessions(); renderStats(); renderHome();
   return rec;
@@ -1185,6 +1188,7 @@ function openExercise(id){
     ${t.ready ? '<button class="ghost" id="editEx">Edit exercise</button>' : ''}
     <button class="ghost" id="dupEx">Duplicate</button>
     ${cur.logOnly ? '' : `<button class="ghost" id="logForEx">${esc(t.logPastLabel || 'Log a past session')}</button>`}
+    ${t.detailExtra ? t.detailExtra(cur) : ''}
     <button class="ghost danger" id="delEx">Delete exercise</button>`;
   show('exercise');
 }
@@ -2110,6 +2114,8 @@ function openLog(exId, existing){
   const when = existing ? new Date(existing.start) : new Date(Date.now() - mins*60000);
   const chosen = existing ? existing.exerciseId : (exId || pool[0].id);
   const isApp = existing && existing.source !== 'manual';
+  const written = typeOf(existing ? existing.type
+    : (exercises.find(e=>e.id === (exId || chosen)) || {}).type).kind === 'written';
 
   el('logBody').innerHTML = `
     <h2 class="sec">Exercise</h2>
@@ -2126,7 +2132,7 @@ function openLog(exId, existing){
       <div><input type="time" id="logTime" value="${timeVal(when)}"></div>
     </div>
 
-    <h2 class="sec">How long</h2>
+    ${written ? '' : `<h2 class="sec">How long</h2>
     <div class="chips" id="logQuick">
       ${[15,30,45,60,90].map(v=>`<button class="chip" data-q="${v}">${v} min</button>`).join('')}
     </div>
@@ -2136,7 +2142,7 @@ function openLog(exId, existing){
     <h2 class="sec">Effort</h2>
     <div class="chips" id="logEffort">
       ${Object.keys(EFFORTS).map(k=>`<button class="chip" data-e="${k}">${EFFORTS[k]}</button>`).join('')}
-    </div>
+    </div>`}
 
     <h2 class="sec">Note</h2>
     <textarea id="logNote" placeholder="Partner drills, six minutes of rope, push-ups at the end" maxlength="240">${esc(existing && existing.note || '')}</textarea>
@@ -2144,31 +2150,32 @@ function openLog(exId, existing){
     <button class="primary" id="logSave" style="margin-top:28px">${existing ? 'Save changes' : 'Log session'}</button>
     ${existing ? '<button class="ghost danger" id="logDel">Delete session</button>' : ''}`;
 
-  let effort = existing && existing.effort || 'moderate';
-  const paintEffort = ()=>setChips('logEffort', b=>b.dataset.e === effort);
-  paintEffort();
-  el('logEffort').addEventListener('click', e=>{
-    const b = e.target.closest('.chip'); if(!b) return;
-    effort = b.dataset.e; paintEffort();
-  });
-
-  const dur = el('logDur'), durOut = el('logDurv');
-  const syncDur = ()=>{
-    durOut.textContent = fmt(+dur.value * 60);
-    setChips('logQuick', b=>+b.dataset.q === +dur.value);
-  };
-  dur.addEventListener('input', syncDur); syncDur();
-  el('logQuick').addEventListener('click', e=>{
-    const b = e.target.closest('.chip'); if(!b) return;
-    dur.value = b.dataset.q; syncDur();
-  });
+  let effort = existing && existing.effort || (written ? '' : 'moderate');
+  if(!written){
+    const paintEffort = ()=>setChips('logEffort', b=>b.dataset.e === effort);
+    paintEffort();
+    el('logEffort').addEventListener('click', e=>{
+      const b = e.target.closest('.chip'); if(!b) return;
+      effort = b.dataset.e; paintEffort();
+    });
+    const dur = el('logDur'), durOut = el('logDurv');
+    const syncDur = ()=>{
+      durOut.textContent = fmt(+dur.value * 60);
+      setChips('logQuick', b=>+b.dataset.q === +dur.value);
+    };
+    dur.addEventListener('input', syncDur); syncDur();
+    el('logQuick').addEventListener('click', e=>{
+      const b = e.target.closest('.chip'); if(!b) return;
+      dur.value = b.dataset.q; syncDur();
+    });
+  }
 
   el('logSave').addEventListener('click', ()=>{
     const [y,mo,d] = el('logDate').value.split('-').map(Number);
     const [hh,mm] = el('logTime').value.split(':').map(Number);
     if(!y || isNaN(hh)) return;
     const start = new Date(y, mo-1, d, hh, mm).getTime();
-    const minutes = +dur.value;
+    const minutes = written ? 0 : +el('logDur').value;
     const ex = exercises.find(x=>x.id === el('logEx').value) || (existing ? null : pool[0]);
     const note = el('logNote').value.trim();
 
@@ -3204,6 +3211,194 @@ function finishLift(){
 })();
 /* ╔══════════════════════════════════════════════════════════════╗
    ║  STRENGTH MODULE — END                                       ║
+   ╚══════════════════════════════════════════════════════════════╝ */
+
+/* ╔══════════════════════════════════════════════════════════════╗
+   ║  JOURNAL MODULE — START                                      ║
+   ║  Self-contained: injects its own styles and screen,          ║
+   ║  registers itself on TYPES, and touches nothing in the shell.║
+   ║  Deleting everything between the START and END banners       ║
+   ║  returns Journaling to its "Soon" stub.                      ║
+   ╚══════════════════════════════════════════════════════════════╝ */
+(function(){
+const J = TYPES.journal;
+
+/* ── styles ──────────────────────────────────────────────────── */
+const css = document.createElement('style');
+css.textContent = `
+  .writeWrap{display:flex;flex-direction:column;flex:1;min-height:0;}
+  .writeMeta{
+    font-family:var(--display);text-transform:uppercase;letter-spacing:.16em;
+    font-size:11px;color:var(--text-dim);margin:0 0 12px;
+  }
+  #writeText{
+    flex:1;min-height:46vh;width:100%;resize:none;-webkit-appearance:none;
+    background:var(--bg);color:var(--text);border:1px solid var(--line);
+    border-radius:2px;padding:16px;font-size:17px;line-height:1.6;
+    font-family:var(--body);
+  }
+  #writeText:focus{outline:none;border-color:var(--accent);}
+  .entryRow{
+    width:100%;text-align:left;display:block;
+    padding:15px 0;border-bottom:1px solid var(--line);
+  }
+  .entryRow .when{
+    font-family:var(--display);text-transform:uppercase;letter-spacing:.12em;
+    font-size:12px;color:var(--text-dim);
+  }
+  .entryRow .peek{
+    display:block;margin-top:6px;font-size:15px;line-height:1.5;color:var(--text);
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  .entryRow .peek.none{color:var(--text-dim);font-style:italic;}
+`;
+document.head.appendChild(css);
+
+/* ── screen ──────────────────────────────────────────────────── */
+const sec = document.createElement('section');
+sec.className = 'screen sessionScreen';
+sec.id = 's-write';
+sec.innerHTML = `
+  <div class="sessbar">
+    <span class="eyebrow" id="writeName">Journal</span>
+    <span class="spacer"></span>
+    <button class="iconbtn" id="writeQuit" aria-label="Close">✕</button>
+  </div>
+  <div class="scroll writeWrap">
+    <p class="writeMeta" id="writeWhen"></p>
+    <textarea id="writeText" placeholder="Write."></textarea>
+    <button class="primary" id="writeSave" style="margin-top:16px">Save entry</button>
+    <button class="ghost danger" id="writeDel" hidden>Delete entry</button>
+  </div>`;
+document.querySelector('main').appendChild(sec);
+TITLES.write = 'Journal';
+
+/* ── state ───────────────────────────────────────────────────── */
+const K_DRAFT = 'practice.writedraft.v1';
+let editingEntry = null;   // the session being edited, or null for a new one
+let entryStart = 0;
+
+const words = t => (String(t||'').trim().match(/\S+/g) || []).length;
+const stamp = ms => new Date(ms).toLocaleString([], {
+  weekday:'long', month:'short', day:'numeric', hour:'numeric', minute:'2-digit'
+});
+const entriesFor = exId => sessions
+  .filter(s => s.type === 'journal' && s.exerciseId === exId)
+  .sort((a,b) => b.start - a.start);
+
+/* ── the type ────────────────────────────────────────────────── */
+Object.assign(J, {
+  ready:true, kind:'written',
+  blurb:'A blank page, kept by date',
+  defaults:()=>({}),
+  summary:()=>'Blank page',
+  facts:(c, done)=>{
+    const mine = cur ? entriesFor(cur.id) : [];
+    const last = mine[0];
+    return [
+      [mine.length, 'Entries'],
+      [last ? new Date(last.start).toLocaleDateString([], {month:'short', day:'numeric'}) : '—', 'Last entry'],
+    ];
+  },
+  /* Nothing to configure — a journal is a blank page. The shell still
+     offers name, schedule and log-only above this. */
+  editorHTML:()=>'',
+  line:s => {
+    const t = (s.detail && s.detail.text || '').trim();
+    if(!t) return '';
+    const first = t.split('\n')[0];
+    return first.length > 70 ? first.slice(0, 70) + '…' : first;
+  },
+  logPastLabel:'Log a paper entry',
+  open:()=>openWrite(null),
+});
+
+/* ── writing ─────────────────────────────────────────────────── */
+function openWrite(existing){
+  editingEntry = existing || null;
+  entryStart = existing ? existing.start : Date.now();
+  const draft = existing ? null : read(K_DRAFT, null);
+  const resumed = draft && draft.exerciseId === (cur && cur.id) ? draft : null;
+  if(resumed) entryStart = resumed.start;
+
+  el('writeName').textContent = cur ? cur.name : 'Journal';
+  el('writeWhen').textContent = stamp(entryStart);
+  el('writeText').value = existing ? (existing.detail && existing.detail.text || '')
+                        : (resumed ? resumed.text : '');
+  el('writeSave').textContent = existing ? 'Save changes' : 'Save entry';
+  el('writeDel').hidden = !existing;
+  el('writeDel').dataset.armed = '0';
+  el('writeDel').textContent = 'Delete entry';
+  show('write');
+  setTimeout(()=>{ try{ el('writeText').focus(); }catch(e){} }, 60);
+}
+
+el('writeText').addEventListener('input', ()=>{
+  if(editingEntry) return;                 // edits commit on Save, not per keystroke
+  write(K_DRAFT, {exerciseId: cur && cur.id, start: entryStart, text: el('writeText').value});
+});
+
+el('writeSave').addEventListener('click', ()=>{
+  const text = el('writeText').value.trim();
+  if(!text){ el('writeText').focus(); return; }
+  if(editingEntry){
+    editingEntry.detail = {text, words: words(text)};
+    saveSessions(); renderStats(); renderHome();
+  } else {
+    commitSession(makeSession(cur, {
+      start: entryStart, end: Date.now(), dur: 0, source:'app',
+      detail: {text, words: words(text)}
+    }));
+    write(K_DRAFT, null);
+  }
+  editingEntry = null;
+  cur ? openExercise(cur.id) : show('home');
+});
+
+el('writeDel').addEventListener('click', ()=>{
+  const b = el('writeDel');
+  if(b.dataset.armed !== '1'){
+    b.dataset.armed = '1'; b.textContent = 'Tap again to delete';
+    setTimeout(()=>{ b.dataset.armed = '0'; b.textContent = 'Delete entry'; }, 4000);
+    return;
+  }
+  sessions = sessions.filter(s => s !== editingEntry);
+  saveSessions(); renderStats(); renderHome();
+  editingEntry = null;
+  cur ? openExercise(cur.id) : show('home');
+});
+
+el('writeQuit').addEventListener('click', ()=>{
+  /* An unfinished new entry stays in the draft, so leaving never
+     loses writing. An edit simply reverts. */
+  editingEntry = null;
+  cur ? openExercise(cur.id) : show('home');
+});
+
+/* ── entries listed on the exercise screen ───────────────────── */
+J.detailExtra = ex => {
+  const mine = entriesFor(ex.id);
+  if(!mine.length) return '';
+  return `<h2 class="sec">Entries</h2>` + mine.map(s=>{
+    const t = (s.detail && s.detail.text || '').trim();
+    return `<button class="entryRow" data-entry="${s.start}">
+      <span class="when">${esc(new Date(s.start).toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'}))}
+        · ${esc(new Date(s.start).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}))}${
+          s.source === 'manual' ? ' · on paper' : ''}</span>
+      <span class="peek${t?'':' none'}">${t ? esc(t.slice(0, 160)) : 'Logged, no text'}</span>
+    </button>`;
+  }).join('');
+};
+
+document.addEventListener('click', e=>{
+  const b = e.target.closest('[data-entry]');
+  if(!b || screen !== 'exercise') return;
+  const s = sessions.find(x => String(x.start) === b.dataset.entry);
+  if(s) openWrite(s);
+});
+})();
+/* ╔══════════════════════════════════════════════════════════════╗
+   ║  JOURNAL MODULE — END                                        ║
    ╚══════════════════════════════════════════════════════════════╝ */
 
 resetAccent();
