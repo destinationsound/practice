@@ -1,0 +1,3021 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#2A1114">
+<title>Practice v4.4</title>
+<style>
+  :root{
+    --canvas:#2A1114; --canvas-deep:#1C0A0D; --surface:#3A181C; --line:#54262A;
+    --bone:#F5EDE2; --muted:#9C7C74; --gold:#C9A227; --on-gold:#231014;
+    --corner:#E8503A; --accent:#C9A227; --ink:#231014;
+    --physical:#C9A227; --mental:#79A9A0;
+    --display:'Avenir Next Condensed','HelveticaNeue-CondensedBold','Arial Narrow',system-ui,sans-serif;
+    --body:-apple-system,BlinkMacSystemFont,system-ui,'Segoe UI',sans-serif;
+    --mono:ui-monospace,'SF Mono',Menlo,monospace;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;margin:0;overscroll-behavior:none;}
+  body{
+    background:var(--canvas);color:var(--bone);font-family:var(--body);
+    display:flex;flex-direction:column;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+    user-select:none;-webkit-user-select:none;touch-action:manipulation;
+  }
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;text-align:left;}
+  input,select{font:inherit;}
+  .eyebrow{font-family:var(--display);font-weight:600;text-transform:uppercase;letter-spacing:.22em;font-size:12px;color:var(--muted);}
+
+  .top{display:flex;align-items:center;gap:12px;padding:14px 18px 12px;border-bottom:1px solid var(--line);flex:none;}
+  .top h1{font-family:var(--display);font-weight:700;text-transform:uppercase;font-size:21px;margin:0;flex:1;}
+  .iconbtn{width:38px;height:38px;border:1px solid var(--line);border-radius:2px;display:grid;place-items:center;color:var(--muted);font-size:17px;flex:none;}
+  .iconbtn:active{background:var(--surface);}
+
+  main{flex:1;min-height:0;display:flex;flex-direction:column;}
+  .screen{display:none;flex:1;min-height:0;flex-direction:column;}
+  .screen.on{display:flex;}
+  .scroll{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:20px 18px calc(24px + env(safe-area-inset-bottom));}
+
+  .nav{display:flex;border-top:1px solid var(--line);flex:none;padding-bottom:env(safe-area-inset-bottom);}
+  .nav button{flex:1;padding:13px 6px 15px;text-align:center;color:var(--muted);font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;font-size:11px;font-weight:600;}
+  .nav button b{display:block;font-size:17px;font-weight:400;margin-bottom:4px;}
+  .nav button[aria-current=page]{color:var(--gold);}
+  body.session .nav,body.session .top{display:none;}
+
+  /* balance */
+  .balance{border:1px solid var(--line);border-radius:2px;padding:15px 16px 13px;margin-bottom:26px;}
+  .balance p{margin:0 0 12px;}
+  .bal{display:flex;align-items:center;gap:11px;margin-top:9px;}
+  .bal .dot{width:9px;height:9px;border-radius:50%;flex:none;}
+  .bal .lab{font-family:var(--display);text-transform:uppercase;letter-spacing:.13em;font-size:12px;width:72px;flex:none;}
+  .bal .track{flex:1;height:6px;background:var(--line);border-radius:3px;overflow:hidden;}
+  .bal .track i{display:block;height:100%;border-radius:3px;}
+  .bal .amt{font-family:var(--mono);font-size:12px;color:var(--muted);width:52px;text-align:right;flex:none;}
+
+  h2.grp{font-family:var(--display);text-transform:uppercase;letter-spacing:.2em;font-size:12px;color:var(--muted);font-weight:600;margin:30px 0 2px;}
+  h2.grp:first-child{margin-top:0;}
+
+  .row{width:100%;display:flex;align-items:center;gap:14px;padding:17px 0;border-bottom:1px solid var(--line);}
+  .row .tick{width:3px;align-self:stretch;background:var(--accent);border-radius:2px;flex:none;}
+  .row .grow{flex:1;min-width:0;}
+  .row .name{font-family:var(--display);font-weight:700;text-transform:uppercase;font-size:20px;line-height:1.1;}
+  .row .sub{color:var(--muted);font-size:13px;margin-top:5px;line-height:1.4;}
+  .row .go{color:var(--muted);font-size:19px;flex:none;}
+  .row.dim{opacity:.42;}
+  .row .donemark{font-size:15px;flex:none;margin-right:-4px;}
+  .row.today .mark{
+    width:26px;height:26px;border-radius:50%;border:1px solid var(--line);
+    display:grid;place-items:center;color:var(--accent);font-size:13px;flex:none;
+  }
+  .row.today.isdone .mark{background:var(--gold);border-color:var(--gold);color:var(--canvas);}
+  .row.today.isdone .name{opacity:.55;}
+  .adh{
+    font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;
+    font-size:11px;color:var(--muted);margin:-12px 0 20px;
+  }
+  .adh b{font-family:var(--mono);letter-spacing:0;color:var(--bone);font-weight:400;}
+  .cal i.plan{border-style:dashed;border-color:var(--muted);}
+  .row.dim .go{font-size:10px;font-family:var(--display);letter-spacing:.14em;text-transform:uppercase;}
+  .nothing{color:var(--muted);font-size:13px;padding:16px 0;border-bottom:1px solid var(--line);}
+
+  .addbtn{width:100%;margin-top:24px;padding:16px;border:1px dashed var(--line);border-radius:2px;text-align:center;color:var(--muted);font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;font-size:13px;font-weight:600;}
+  .addbtn:active{background:var(--surface);}
+
+  .hero{font-family:var(--display);font-weight:700;text-transform:uppercase;font-size:clamp(2.2rem,12vw,3.6rem);line-height:.95;margin:6px 0;letter-spacing:-.01em;}
+  .heroSub{color:var(--muted);font-size:14px;margin:0 0 26px;}
+  .facts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:28px;}
+  .fact{border:1px solid var(--line);border-radius:2px;padding:13px 12px;}
+  .fact b{display:block;font-family:var(--display);font-size:23px;font-weight:700;line-height:1;margin-bottom:6px;color:var(--accent);}
+  .fact span{font-family:var(--display);text-transform:uppercase;letter-spacing:.12em;font-size:10px;color:var(--muted);}
+  .primary{width:100%;padding:20px;background:var(--accent);color:var(--ink);font-family:var(--display);font-weight:700;text-transform:uppercase;letter-spacing:.14em;font-size:19px;border-radius:2px;text-align:center;}
+  .primary:active{transform:scale(.99);}
+  .primary[disabled]{background:none;border:1px solid var(--line);color:var(--muted);}
+  .ghost{width:100%;margin-top:12px;padding:16px;border:1px solid var(--line);border-radius:2px;text-align:center;font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;font-size:14px;font-weight:700;color:var(--muted);}
+  .ghost.danger{color:var(--corner);}
+
+  h2.sec{font-family:var(--display);text-transform:uppercase;letter-spacing:.2em;font-size:12px;color:var(--muted);font-weight:600;margin:28px 0 12px;}
+  h2.sec:first-child{margin-top:0;}
+  .field{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:9px 0;}
+  .field label{font-size:15px;}
+  .field .val{font-family:var(--mono);font-size:14px;color:var(--accent);font-variant-numeric:tabular-nums;}
+  input[type=range]{-webkit-appearance:none;width:100%;height:26px;background:none;margin:0;}
+  input[type=range]::-webkit-slider-runnable-track{height:2px;background:var(--line);}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;margin-top:-12px;border-radius:50%;background:var(--accent);}
+  input[type=text],select{width:100%;-webkit-appearance:none;appearance:none;background:var(--surface);color:var(--bone);border:1px solid var(--line);border-radius:2px;padding:14px 15px;font-size:16px;font-family:var(--body);}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;}
+  .chip{padding:11px 15px;border:1px solid var(--line);border-radius:2px;font-family:var(--display);text-transform:uppercase;letter-spacing:.1em;font-size:13px;font-weight:600;color:var(--muted);}
+  .chip[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--ink);}
+  .chip.day{min-width:42px;text-align:center;padding:11px 0;}
+  .note{color:var(--muted);font-size:13px;line-height:1.5;margin:10px 0 0;}
+
+  .sessbar{display:flex;align-items:center;gap:14px;padding:14px 18px 12px;border-bottom:1px solid var(--line);flex:none;}
+  .clock{font-family:var(--mono);font-size:15px;font-variant-numeric:tabular-nums;}
+  .clock.warn{color:var(--corner);}
+  .sessbar .spacer{flex:1;}
+  .stage{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;padding:20px 18px;overflow:hidden;}
+  .strike{display:flex;align-items:baseline;gap:16px;padding:6px 0 6px 14px;border-left:3px solid transparent;opacity:.34;transition:opacity .16s ease,border-color .16s ease,transform .16s ease;}
+  .strike.on{opacity:1;border-left-color:var(--accent);transform:translateX(4px);}
+  .strike .n{font-family:var(--mono);font-size:17px;color:var(--accent);width:1.1em;flex:none;padding-top:.3em;text-align:right;}
+  .strike .t{font-family:var(--display);font-weight:700;text-transform:uppercase;line-height:.98;font-size:clamp(2rem,10.5vw,4.6rem);}
+  .strike.def .t{color:var(--muted);font-weight:600;font-style:italic;}
+  .strike.def.on .t{color:var(--corner);}
+  .foot{padding:0 18px calc(18px + env(safe-area-inset-bottom));flex:none;}
+  .rope{height:2px;background:var(--line);margin-bottom:16px;position:relative;overflow:hidden;}
+  .rope i{position:absolute;inset:0;transform-origin:left;transform:scaleX(0);background:var(--accent);display:block;}
+  .status{display:flex;align-items:baseline;justify-content:space-between;font-family:var(--display);text-transform:uppercase;letter-spacing:.18em;font-size:12px;color:var(--muted);margin-bottom:14px;min-height:14px;}
+  .status b{font-family:var(--mono);letter-spacing:0;color:var(--bone);font-weight:400;}
+  .primary.stop{background:none;border:1px solid var(--line);color:var(--muted);}
+
+  .med{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;gap:14px;}
+  .med .big{font-family:var(--mono);font-size:clamp(3.4rem,19vw,6.4rem);font-variant-numeric:tabular-nums;letter-spacing:-.03em;line-height:1;transition:opacity .5s ease;}
+  .med .eyebrow,.med .note{transition:opacity .5s ease;text-align:center;margin:0;}
+  body.dim .med .big{opacity:.05;}
+  body.dim .med .eyebrow,body.dim .med .note{opacity:.12;}
+  body.dim.peek .med .big{opacity:1;}
+  body.dim.peek .med .eyebrow,body.dim.peek .med .note{opacity:1;}
+  .navrow{display:flex;align-items:center;justify-content:space-between;margin:2px 0 18px;}
+  .navrow button{width:42px;height:38px;border:1px solid var(--line);border-radius:2px;color:var(--muted);font-size:16px;text-align:center;}
+  .navrow span{font-family:var(--display);text-transform:uppercase;letter-spacing:.16em;font-size:14px;font-weight:600;}
+  .totals{display:flex;gap:10px;margin-bottom:22px;}
+  .tot{flex:1;border:1px solid var(--line);border-radius:2px;padding:12px 10px;}
+  .tot b{display:block;font-family:var(--display);font-size:26px;font-weight:700;line-height:1;margin-bottom:5px;color:var(--gold);}
+  .tot span{font-family:var(--display);text-transform:uppercase;letter-spacing:.12em;font-size:10px;color:var(--muted);}
+  .brk{margin:-6px 0 24px;}
+  .brkrow{display:flex;align-items:center;gap:10px;padding:7px 0;}
+  .brkrow .dot{width:8px;height:8px;border-radius:2px;flex:none;}
+  .brkrow .nm{
+    font-family:var(--display);text-transform:uppercase;letter-spacing:.1em;
+    font-size:12px;width:92px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .brkrow .tr{flex:1;height:5px;background:var(--line);border-radius:3px;overflow:hidden;}
+  .brkrow .tr i{display:block;height:100%;border-radius:3px;}
+  .brkrow .amt{
+    font-family:var(--mono);font-size:12px;color:var(--muted);
+    width:54px;text-align:right;flex:none;
+  }
+  .bars{display:flex;align-items:flex-end;gap:7px;height:150px;margin-bottom:8px;}
+  .bars div{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;}
+  .bars i{display:block;min-height:2px;border-radius:1px;}
+  .bars i.ph{background:var(--physical);}
+  .bars i.mt{background:var(--mental);}
+  .bars i.none{background:var(--line);}
+  .bars b{font-family:var(--mono);font-size:10px;color:var(--muted);text-align:center;font-weight:400;margin-bottom:5px;min-height:12px;}
+  .axis{display:flex;gap:7px;margin-bottom:10px;}
+  .axis span{flex:1;text-align:center;font-family:var(--display);font-size:11px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;}
+  .key{display:flex;gap:16px;margin-bottom:24px;font-size:12px;color:var(--muted);}
+  .key i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;}
+  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:22px;}
+  .cal span.hd{font-family:var(--display);font-size:10px;color:var(--muted);text-align:center;letter-spacing:.06em;padding-bottom:3px;}
+  .cal i{position:relative;overflow:hidden;aspect-ratio:1;border:1px solid var(--line);border-radius:2px;display:flex;align-items:flex-start;justify-content:flex-end;padding:3px 4px;font-family:var(--mono);font-size:9px;font-style:normal;color:var(--muted);}
+  .cal i span{position:relative;z-index:1;}
+  .cal i u{position:absolute;left:0;right:0;bottom:0;text-decoration:none;}
+  .cal i.blank{border-color:transparent;}
+  .cal i.hit{color:var(--bone);font-weight:600;}
+  .cal i.today{border-color:var(--gold);border-width:2px;}
+  .sess{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid var(--line);}
+  .sess .when{font-size:14px;}
+  .sess .when small{display:block;color:var(--muted);font-size:12px;margin-top:3px;}
+  textarea{
+    width:100%;background:var(--surface);color:var(--bone);border:1px solid var(--line);
+    border-radius:2px;padding:14px 15px;font-size:16px;font-family:var(--body);
+    min-height:92px;resize:none;-webkit-appearance:none;
+  }
+  input[type=date],input[type=time]{
+    width:100%;background:var(--surface);color:var(--bone);border:1px solid var(--line);
+    border-radius:2px;padding:13px 15px;font-size:16px;font-family:var(--body);
+    -webkit-appearance:none;appearance:none;
+  }
+  .half{display:flex;gap:10px;}
+  .half>div{flex:1;}
+  .sess{width:100%;text-align:left;}
+  .tag{
+    display:inline-block;font-family:var(--display);text-transform:uppercase;
+    letter-spacing:.12em;font-size:9px;border:1px solid var(--line);
+    border-radius:2px;padding:2px 5px;margin-left:7px;color:var(--muted);vertical-align:1px;
+  }
+  .sess .when small.detail{color:var(--bone);opacity:.75;font-family:var(--mono);font-size:11px;}
+  .sess .dur{font-family:var(--mono);font-size:16px;color:var(--gold);}
+  .empty{color:var(--muted);font-size:14px;line-height:1.5;padding:26px 0;}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;}}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <button class="iconbtn" id="back" aria-label="Back" hidden>‹</button>
+  <h1 id="title">Practice</h1>
+</div>
+
+<main>
+  <section class="screen on" id="s-home"><div class="scroll" id="homeBody"></div></section>
+  <section class="screen" id="s-newtype"><div class="scroll" id="typeList"></div></section>
+  <section class="screen" id="s-preset"><div class="scroll" id="presetList"></div></section>
+
+  <section class="screen" id="s-exercise"><div class="scroll" id="exerciseDetail"></div></section>
+  <section class="screen" id="s-editor"><div class="scroll" id="editorBody"></div></section>
+
+  <section class="screen" id="s-log"><div class="scroll" id="logBody"></div></section>
+
+  <section class="screen" id="s-stats"><div class="scroll">
+    <div class="chips" id="statTabs">
+      <button class="chip" data-v="day" aria-pressed="false">Day</button>
+      <button class="chip" data-v="week" aria-pressed="true">Week</button>
+      <button class="chip" data-v="month" aria-pressed="false">Month</button>
+    </div>
+    <div id="statBody" style="margin-top:20px"></div>
+    <button class="ghost" id="exportics">Add to Calendar app</button>
+    <p class="note">Downloads every session as calendar events for Apple Calendar.</p>
+    <button class="ghost danger" id="clearlog">Clear all history</button>
+  </div></section>
+
+  <section class="screen" id="s-settings"><div class="scroll">
+    <p class="note" id="storageWarn" hidden></p>
+    <h2 class="sec">Sound</h2>
+    <div class="chips" id="audioMode">
+      <button class="chip" data-a="playback" aria-pressed="true">Play on silent</button>
+      <button class="chip" data-a="ambient" aria-pressed="false">Mix with other audio</button>
+    </div>
+    <p class="note" id="audioNote"></p>
+
+    <h2 class="sec">Voice</h2>
+    <select id="voicepick" aria-label="Voice"></select>
+    <p class="note">For a clearer voice: Settings → Accessibility → Spoken Content → Voices → English, download <b>Ava</b> or <b>Samantha</b> (Enhanced or Premium), then reload and pick it here.</p>
+    <div class="field"><label for="rate">Speed</label><span class="val" id="ratev">0.95×</span></div>
+    <input type="range" id="rate" min="0.6" max="1.6" step="0.05" value="0.95">
+    <div class="field"><label for="pitch">Pitch</label><span class="val" id="pitchv">1.00</span></div>
+    <input type="range" id="pitch" min="0.6" max="1.4" step="0.05" value="1">
+    <h2 class="sec">Units</h2>
+    <div class="chips" id="units">
+      <button class="chip" data-u="lb" aria-pressed="true">Pounds</button>
+      <button class="chip" data-u="kg" aria-pressed="false">Kilograms</button>
+    </div>
+
+    <h2 class="sec">Callouts</h2>
+    <div class="chips" id="callouts">
+      <button class="chip" data-c="words" aria-pressed="true">Say names</button>
+      <button class="chip" data-c="numbers" aria-pressed="false">Say numbers</button>
+    </div>
+    <p class="note">Numbers calls the six numbered punches as 1 through 6. Kicks, knees and elbows are always called by name.</p>
+    <button class="ghost" id="test">Test voice</button>
+    <p class="note" id="testnote">Tap to hear a sample. If you hear nothing, check the silent switch and media volume.</p>
+    <h2 class="sec">Your data</h2>
+    <button class="ghost" id="doExport">Export a backup</button>
+    <button class="ghost" id="doImport">Import a backup</button>
+    <input type="file" id="importFile" accept="application/json,.json" hidden>
+    <div id="importPanel" hidden></div>
+    <p class="note">A backup holds your exercises, history, movements and settings. Importing adds what is missing and never deletes anything you already have — safe to run on a fresh copy of the app.</p>
+
+    <p class="note" style="margin-top:28px">Practice v${APP_VERSION}</p>
+  </div></section>
+
+  <section class="screen sessionScreen" id="s-med">
+    <div class="sessbar">
+      <span class="eyebrow" id="medPhase">Ready</span>
+      <span class="spacer"></span>
+      <button class="iconbtn" id="medQuit" aria-label="Close">✕</button>
+    </div>
+    <div class="med" id="medStage">
+      <p class="eyebrow" id="medName"></p>
+      <div class="big" id="medClock">15:00</div>
+      <p class="note" id="medHint"></p>
+    </div>
+    <div class="foot">
+      <button class="primary" id="medGo">End session</button>
+      <button class="ghost" id="medPause">Pause</button>
+    </div>
+  </section>
+
+  <section class="screen sessionScreen" id="s-session">
+    <div class="sessbar">
+      <span class="eyebrow" id="phase">Ready</span>
+      <span class="clock" id="clock">3:00</span>
+      <span class="spacer"></span>
+      <button class="iconbtn" id="quit" aria-label="Close">✕</button>
+    </div>
+    <div class="stage" id="stage"></div>
+    <div class="foot">
+      <div class="rope"><i id="rope"></i></div>
+      <div class="status"><span id="statusL"></span><b id="statusR"></b></div>
+      <button class="primary" id="go">Start</button>
+      <button class="ghost" id="pauseBtn" hidden>Pause</button>
+    </div>
+  </section>
+</main>
+
+<nav class="nav" id="nav">
+  <button data-tab="home" aria-current="page"><b>▤</b>Exercises</button>
+  <button data-tab="stats"><b>▦</b>Stats</button>
+  <button data-tab="settings"><b>☰</b>Settings</button>
+</nav>
+
+<script>
+/* ══ technique catalogue ═══════════════════════════════════════
+   k     key used by the transition table and combo library
+   side  lead | rear | none        lvl  1 basics, 2 intermediate, 3 advanced
+   r     range it is thrown from   xr   range you are left at afterwards
+         (3 = kicking range, 2 = punching range, 1 = clinch)
+   open  weight multiplier when it leads a combo
+   close multiplier when it finishes one                              */
+const CAT = [
+  // punches
+  {k:'jab',        g:'punch', num:'1', side:'lead', lvl:1, w:10, open:2.4, close:.5, r:2.2, xr:2.1, label:L=>`jab`},
+  {k:'cross',      g:'punch', num:'2', side:'rear', lvl:1, w:9,  open:.8,  close:.8, r:2.1, xr:2.0, label:L=>`cross`},
+  {k:'leadHook',   g:'punch', num:'3', side:'lead', lvl:1, w:8,  open:.5,  close:.8, r:1.7, xr:1.7, label:L=>`${L.lead} hook`},
+  {k:'rearHook',   g:'punch', num:'4', side:'rear', lvl:2, w:5,  open:.3,  close:.9, r:1.7, xr:1.7, label:L=>`${L.rear} hook`},
+  {k:'leadUpper',  g:'punch', num:'5', side:'lead', lvl:2, w:4,  open:.3,  close:.8, r:1.4, xr:1.4, label:L=>`${L.lead} uppercut`},
+  {k:'rearUpper',  g:'punch', num:'6', side:'rear', lvl:2, w:4,  open:.3,  close:.9, r:1.4, xr:1.4, label:L=>`${L.rear} uppercut`},
+  {k:'overhand',   g:'punch', side:'rear', lvl:2, w:3,  open:.3,  close:1,  r:1.9, xr:1.8, label:L=>`overhand ${L.rear}`},
+  {k:'jabBody',    g:'punch', num:'1', nsay:'one to the body', side:'lead', lvl:2, w:3,  open:.9,  close:.5, r:1.9, xr:1.8, label:L=>`jab to the body`},
+  {k:'crossBody',  g:'punch', num:'2', nsay:'two to the body', side:'rear', lvl:2, w:3,  open:.4,  close:.7, r:1.8, xr:1.7, label:L=>`cross to the body`},
+  {k:'hookBody',   g:'punch', num:'3', nsay:'three to the body', side:'lead', lvl:2, w:3,  open:.3,  close:.7, r:1.5, xr:1.5, label:L=>`${L.lead} hook to the body`},
+  // kicks
+  {k:'leadTeep',   g:'kick', side:'lead', lvl:1, w:5, open:1.8, close:1.2, r:3.0, xr:3.0, label:L=>`${L.lead} teep`},
+  {k:'rearTeep',   g:'kick', side:'rear', lvl:1, w:4, open:1.3, close:1.2, r:3.0, xr:3.0, label:L=>`${L.rear} teep`},
+  {k:'rearLow',    g:'kick', side:'rear', lvl:1, w:9, open:.5,  close:2.4, r:2.5, xr:2.3, label:L=>`${L.rear} low kick`},
+  {k:'rearBody',   g:'kick', side:'rear', lvl:1, w:9, open:.4,  close:2.4, r:2.6, xr:2.3, label:L=>`${L.rear} body kick`},
+  {k:'rearHead',   g:'kick', side:'rear', lvl:2, w:4, open:.2,  close:2.0, r:2.6, xr:2.4, label:L=>`${L.rear} head kick`},
+  {k:'leadBody',   g:'kick', side:'lead', lvl:3, w:3, open:.5,  close:1.6, r:2.6, xr:2.3, label:L=>`${L.lead} body kick`},
+  {k:'switchKick', g:'kick', side:'lead', lvl:1, w:6, open:.7,  close:2.0, r:2.6, xr:2.3, label:L=>`switch kick`},
+  {k:'switchLow',  g:'kick', side:'lead', lvl:2, w:3, open:.4,  close:1.8, r:2.5, xr:2.3, label:L=>`switch low kick`},
+  {k:'questionMk', g:'kick', side:'rear', lvl:3, w:2, open:.1,  close:1.8, r:2.6, xr:2.4, label:L=>`question mark kick`, spin:1},
+  {k:'spinBack',   g:'kick', side:'rear', lvl:3, w:2, open:.1,  close:1.8, r:2.5, xr:2.5, label:L=>`spinning back kick`, spin:1},
+  // knees
+  {k:'rearKnee',   g:'knee', side:'rear', lvl:1, w:7, open:.4, close:1.8, r:1.2, xr:1.1, label:L=>`${L.rear} knee`},
+  {k:'leadKnee',   g:'knee', side:'lead', lvl:2, w:5, open:.4, close:1.6, r:1.2, xr:1.1, label:L=>`${L.lead} knee`},
+  {k:'skipKnee',   g:'knee', side:'lead', lvl:2, w:4, open:.8, close:1.8, r:2.2, xr:1.4, label:L=>`skip knee`},
+  {k:'longKnee',   g:'knee', side:'rear', lvl:3, w:3, open:.3, close:1.6, r:1.6, xr:1.3, label:L=>`${L.rear} long knee`},
+  // elbows
+  {k:'leadElbow',  g:'elbow', side:'lead', lvl:2, w:6, open:.3, close:1.6, r:1.2, xr:1.1, label:L=>`${L.lead} elbow`},
+  {k:'rearElbow',  g:'elbow', side:'rear', lvl:2, w:6, open:.3, close:1.6, r:1.2, xr:1.1, label:L=>`${L.rear} elbow`},
+  {k:'upElbow',    g:'elbow', side:'rear', lvl:2, w:4, open:.2, close:1.5, r:1.1, xr:1.1, label:L=>`${L.rear} up elbow`},
+  {k:'downElbow',  g:'elbow', side:'lead', lvl:3, w:4, open:.2, close:1.5, r:1.1, xr:1.1, label:L=>`${L.lead} down elbow`},
+  {k:'spinElbow',  g:'elbow', side:'rear', lvl:3, w:2, open:.1, close:1.8, r:1.4, xr:1.4, label:L=>`spinning elbow`, spin:1},
+  // defence and movement
+  {k:'slip',      g:'defense', side:'none', lvl:2, w:6, open:1.4, close:.4, r:2.0, xr:1.7, label:L=>`slip`},
+  {k:'roll',      g:'defense', side:'none', lvl:2, w:5, open:1.2, close:.4, r:1.8, xr:1.7, label:L=>`roll`},
+  {k:'check',     g:'defense', side:'none', lvl:1, w:6, open:1.8, close:.5, r:2.5, xr:2.4, label:L=>`check`},
+  {k:'pivot',     g:'defense', side:'none', lvl:2, w:5, open:.3,  close:1.6, r:2.0, xr:2.4, label:L=>`pivot out`},
+  {k:'stepBack',  g:'defense', side:'none', lvl:2, w:4, open:.8,  close:1.2, r:2.2, xr:2.8, label:L=>`step back`},
+  {k:'clinch',    g:'defense', side:'none', lvl:3, w:4, open:.6,  close:.4, r:1.4, xr:1.0, label:L=>`clinch`},
+];
+CAT.forEach((t,i)=>t.id=i);
+const BY_KEY = Object.fromEntries(CAT.map(t=>[t.k,t]));
+
+/* ══ transition table ══════════════════════════════════════════
+   How naturally one strike feeds the next. Above 1 is a link a coach
+   would actually call; below 1 is mechanically awkward. Pairs that
+   aren't listed still occur, just rarely. */
+const LINK = {
+  jab:       {cross:3.2, jab:1.4, leadHook:1.2, rearLow:1.7, rearBody:1.7, switchKick:1.9, rearTeep:1.3, rearHead:.9, overhand:1.3, crossBody:1.4, leadTeep:.5, leadUpper:.5, skipKnee:1.2},
+  cross:     {leadHook:3.2, rearBody:2.8, rearLow:2.6, rearHead:1.5, leadUpper:1.5, rearKnee:1.6, hookBody:1.4, leadElbow:1.3, switchKick:1.3, pivot:1.2, rearHook:.15, leadTeep:.5},
+  leadHook:  {rearBody:2.8, rearLow:2.4, cross:1.7, rearUpper:1.7, rearKnee:1.6, rearElbow:1.5, rearHook:1.2, spinElbow:1.3, spinBack:1.1, leadHook:.3, switchKick:.7},
+  rearHook:  {leadHook:2.3, leadUpper:1.5, switchKick:1.5, leadKnee:1.3, leadElbow:1.3, rearBody:.7},
+  leadUpper: {rearHook:2.5, cross:1.7, leadHook:1.3, rearKnee:1.5, rearElbow:1.5, rearUpper:.4},
+  rearUpper: {leadHook:2.7, leadElbow:1.5, leadKnee:1.3, rearBody:1.2, cross:.4},
+  overhand:  {leadHook:2.3, rearLow:1.7, rearBody:1.6, leadUpper:1.3},
+  jabBody:   {cross:2.3, rearHead:1.7, leadHook:1.6, overhand:1.5},
+  crossBody: {leadHook:2.5, rearHead:1.5, rearBody:1.4},
+  hookBody:  {leadHook:2.5, cross:1.7, rearBody:1.6},
+  leadTeep:  {rearTeep:1.3, jab:1.3, rearBody:1.4, leadTeep:1.0, pivot:1.0, cross:.7, rearLow:.7},
+  rearTeep:  {jab:1.5, leadTeep:1.3, rearBody:1.2, cross:.8},
+  rearLow:   {jab:1.7, rearHead:1.7, leadHook:1.5, cross:1.4, rearBody:1.2, leadTeep:1.2, pivot:1.2, rearLow:.8},
+  rearBody:  {jab:1.5, leadHook:1.5, pivot:1.4, cross:1.3, leadTeep:1.2, spinBack:1.2, rearLow:1.0, stepBack:1.0, rearBody:.7},
+  rearHead:  {pivot:1.5, stepBack:1.2, jab:1.2, rearLow:1.0},
+  leadBody:  {cross:1.7, jab:1.3, leadHook:1.2},
+  switchKick:{cross:1.7, rearLow:1.3, jab:1.2, leadHook:1.2, pivot:1.2},
+  switchLow: {cross:1.7, jab:1.5, rearBody:1.0},
+  questionMk:{pivot:1.5, jab:1.0},
+  spinBack:  {pivot:1.3, jab:1.0},
+  rearKnee:  {leadElbow:1.9, rearElbow:1.6, leadKnee:1.7, leadHook:1.4, clinch:1.2},
+  leadKnee:  {rearElbow:1.9, rearKnee:1.5, cross:1.4, rearHook:1.2},
+  skipKnee:  {leadHook:1.5, rearElbow:1.4, cross:1.3},
+  longKnee:  {leadElbow:1.5, leadHook:1.2, rearKnee:1.3},
+  leadElbow: {rearElbow:1.7, rearKnee:1.9, downElbow:1.3, rearHook:1.2},
+  rearElbow: {leadElbow:1.7, rearKnee:1.6, leadKnee:1.5, leadHook:1.4},
+  upElbow:   {leadHook:1.6, leadElbow:1.4, rearKnee:1.4},
+  downElbow: {rearKnee:1.6, leadHook:1.4},
+  spinElbow: {pivot:1.3, leadHook:1.0},
+  slip:      {cross:2.8, rearHook:2.1, rearBody:1.6, rearUpper:1.5, leadHook:1.4},
+  roll:      {leadHook:2.8, rearHook:1.9, leadUpper:1.5, rearBody:1.4},
+  check:     {rearLow:2.6, cross:1.9, rearBody:1.7, jab:1.5, leadHook:1.4},
+  pivot:     {jab:2.1, cross:1.2, rearLow:1.2},
+  stepBack:  {leadTeep:2.2, jab:1.7, rearBody:1.3, cross:1.2},
+  clinch:    {rearKnee:3.0, leadKnee:2.5, longKnee:1.9, leadElbow:1.7, jab:.05, cross:.05, rearBody:.05, rearLow:.05},
+};
+
+/* ══ combos coaches actually call ══════════════════════════════ */
+const LIB = [
+  {lvl:1, k:['jab','cross']},
+  {lvl:1, k:['jab','jab','cross']},
+  {lvl:1, k:['jab','cross','leadHook']},
+  {lvl:1, k:['jab','cross','rearLow']},
+  {lvl:1, k:['jab','cross','rearBody']},
+  {lvl:1, k:['jab','cross','leadHook','rearBody']},
+  {lvl:1, k:['jab','cross','leadHook','cross']},
+  {lvl:1, k:['jab','cross','leadHook','rearLow']},
+  {lvl:1, k:['cross','leadHook','rearLow']},
+  {lvl:1, k:['cross','leadHook','rearBody']},
+  {lvl:1, k:['jab','switchKick']},
+  {lvl:1, k:['jab','jab','rearBody']},
+  {lvl:1, k:['jab','rearBody']},
+  {lvl:1, k:['leadTeep','cross','rearLow']},
+  {lvl:1, k:['leadTeep','rearBody']},
+  {lvl:1, k:['check','rearLow']},
+  {lvl:1, k:['jab','cross','rearKnee']},
+  {lvl:1, k:['rearLow','jab','cross']},
+  {lvl:1, k:['jab','cross','switchKick']},
+  {lvl:2, k:['jab','leadUpper','rearHook','leadHook']},
+  {lvl:2, k:['jab','cross','leadUpper','rearHook']},
+  {lvl:2, k:['slip','cross','leadHook','rearBody']},
+  {lvl:2, k:['roll','leadHook','cross','rearLow']},
+  {lvl:2, k:['jabBody','cross','rearHead']},
+  {lvl:2, k:['jab','crossBody','leadHook','rearBody']},
+  {lvl:2, k:['rearLow','rearLow','jab','cross']},
+  {lvl:2, k:['check','cross','leadHook','rearLow']},
+  {lvl:2, k:['jab','rearUpper','leadHook','rearBody']},
+  {lvl:2, k:['switchKick','cross','rearLow']},
+  {lvl:2, k:['jab','cross','rearBody','leadHook']},
+  {lvl:2, k:['jab','overhand','leadHook','rearLow']},
+  {lvl:2, k:['hookBody','leadHook','cross','rearBody']},
+  {lvl:2, k:['stepBack','leadTeep','cross','rearLow']},
+  {lvl:2, k:['jab','cross','rearElbow','rearKnee']},
+  {lvl:2, k:['leadElbow','rearElbow','rearKnee']},
+  {lvl:2, k:['skipKnee','leadHook','cross']},
+  {lvl:2, k:['jab','cross','leadHook','rearUpper','leadHook','rearBody']},
+  {lvl:2, k:['rearBody','cross','leadHook','rearBody']},
+  {lvl:3, k:['clinch','rearKnee','leadKnee','leadElbow']},
+  {lvl:3, k:['jab','cross','questionMk']},
+  {lvl:3, k:['rearLow','rearLow','rearHead']},
+  {lvl:3, k:['jab','cross','leadHook','spinElbow']},
+  {lvl:3, k:['leadTeep','jab','cross','spinBack']},
+  {lvl:3, k:['jab','cross','leadHook','rearHead']},
+  {lvl:3, k:['jab','cross','leadKnee','rearElbow']},
+];
+
+/* ══ combo generation ══════════════════════════════════════════ */
+const allowed = t => S.groups[t.g] && t.lvl <= S.level;
+function pool(){ return CAT.filter(allowed); }
+
+function libraryCombo(){
+  const fits = LIB.filter(c =>
+    c.lvl <= S.level &&
+    c.k.length >= S.min && c.k.length <= S.max &&
+    c.k.every(key => allowed(BY_KEY[key]))
+  );
+  if(!fits.length) return null;
+  return fits[Math.floor(Math.random()*fits.length)].k.map(key=>BY_KEY[key]);
+}
+
+function generatedCombo(){
+  const p = pool();
+  if(!p.length) return [];
+  const n = rnd(S.min, Math.max(S.min, S.max));
+  const out = [];
+  let prev = null, prevSide = null, range = 2.2, usedSpin = false, defCount = 0, runG = 0;
+
+  for(let i=0;i<n;i++){
+    const last = i === n-1;
+    const scored = p.map(t=>{
+      let w = t.w * (i===0 ? t.open : 1) * (last ? t.close : 1);
+
+      if(prev){
+        const table = LINK[prev.k] || {};
+        const known = table[t.k] !== undefined;
+        if(known) w *= table[t.k];
+        else { w *= .40; if(t.k === prev.k) w *= .06; }
+        // distance: a known link may close or open range on purpose,
+        // anything else has to be reachable from where you are standing
+        const gap = Math.abs(range - t.r);
+        if(!known && gap > 1.1) w = 0;
+        w *= Math.exp(-(gap*gap) / .75);
+        if(t.side !== 'none' && prevSide) w *= t.side === prevSide ? .7 : 1.25;
+        if(t.g === prev.g && runG >= 2) w *= .05;             // no long runs of one weapon
+      }
+      if(t.spin && (usedSpin || !last)) w = 0;                // spins finish, once
+      if(t.k === 'clinch' && i !== 0) w = 0;                  // you clinch to start an exchange
+      if(t.g === 'defense'){
+        if(defCount >= 2) w = 0;
+        else if(defCount >= 1) w *= .15;
+        if(last && t.close < 1) w *= .3;
+      }
+      return {t, w};
+    }).filter(x=>x.w > 0.0001);
+
+    if(!scored.length) break;
+    const pick = weighted(scored);
+    out.push(pick);
+    runG = (prev && pick.g === prev.g) ? runG + 1 : 1;
+    prev = pick; range = pick.xr;
+    if(pick.side !== 'none') prevSide = pick.side;
+    if(pick.spin) usedSpin = true;
+    if(pick.g === 'defense') defCount++;
+  }
+  return out;
+}
+
+function buildCombo(){
+  if(S.flow !== 'free'){
+    const lean = S.flow === 'library' ? 1 : .55;
+    if(Math.random() < lean){
+      const c = libraryCombo();
+      if(c) return c;
+    }
+  }
+  return generatedCombo();
+}
+
+function weighted(list){
+  const total = list.reduce((s,x)=>s+x.w,0);
+  let r = Math.random()*total;
+  for(const x of list){ r -= x.w; if(r<=0) return x.t; }
+  return list[list.length-1].t;
+}
+const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
+
+
+const APP_VERSION = '4.4';
+
+/* ══ data shapes ═══════════════════════════════════════════════
+   The four records the whole app is built on. Every field here is
+   deliberate; anything not listed does not belong in storage.
+
+   Exercise   { id, name, type, category, cfg, logOnly?, sched? }
+              cfg is owned by the type. sched is {days:[0-6]}.
+              category is fixed by the type, never chosen directly.
+
+   Session    { type, category, exerciseId, name,
+                start, end, dur, source, detail?, effort?, note? }
+              dur is seconds WORKED — pauses already subtracted.
+              source is 'app' when the app drove it, 'manual' when
+              entered by hand. detail is owned by the type and is
+              absent on duration-only entries; anything reading it
+              must tolerate that.
+
+   Movement   { id, name, group, measure, ladder? }
+              (strength module only) measure is weight | level | time.
+
+   Type       { name, category, accent, ink, ready, kind, blurb,
+                defaults(), summary(cfg), facts(cfg,done), line(session),
+                editorHTML(cfg), editorWire(cfg,api),
+                open(), logPast?(), logPastLabel?, templates? }
+              A type is the only thing that knows its own cfg and
+              detail. The shell never inspects either.
+   ══════════════════════════════════════════════════════════════ */
+
+/* ══ categories ════════════════════════════════════════════════ */
+const CATS = [
+  {id:'physical', name:'Physical health', color:'#C9A227'},
+  {id:'mental',   name:'Mental health',   color:'#79A9A0'},
+];
+const catOf = id => CATS.find(c=>c.id === id) || CATS[0];
+
+/* ══ exercise types ════════════════════════════════════════════
+   Each type owns its own config shape, summary line and detail
+   tiles. Category is fixed by type — overlap exists, but every
+   practice has a dominant focus. Adding a type means adding an
+   entry here; nothing in the shell changes. */
+const MT_DEFAULTS = {
+  min:2, max:4, rest:4, gap:.1,
+  groups:{punch:true,kick:true,knee:true,elbow:false,defense:false},
+  stance:'southpaw', level:2, flow:'mixed',
+  useRounds:true, roundLen:180, breakLen:60, rounds:5,
+};
+const TYPES = {
+  muaythai:{
+    name:'Muay Thai', category:'physical', accent:'#C9A227', ink:'#231014',
+    ready:true, kind:'timed', blurb:'Spoken combo callouts on a round timer',
+    line:s=>{ const d = s.detail || s; return d.rounds ? `${d.rounds} rounds · ${d.combos || 0} combos` : ''; },
+    defaults:()=>JSON.parse(JSON.stringify(MT_DEFAULTS)),
+    summary:c=>[
+      c.useRounds ? `${c.rounds} × ${fmt(c.roundLen)} rounds` : 'No round limit',
+      `${c.min}–${c.max} strikes`,
+      ['','Basics','Intermediate','Advanced'][c.level],
+      c.stance === 'orthodox' ? 'Orthodox' : 'Southpaw'
+    ].join(' · '),
+    facts:(c,done)=>[
+      [c.useRounds ? fmt(c.rounds*c.roundLen + (c.rounds-1)*c.breakLen) : '∞', 'Session length'],
+      [c.rest+'s', 'Rest per combo'],
+      [Object.values(c.groups).filter(Boolean).length, 'Weapon groups'],
+      [done, 'Times done']
+    ],
+    editorHTML:c=>`
+      <h2 class="sec">Combo</h2>
+      <div class="field"><label>Shortest combo</label><span class="val" id="minSv"></span></div>
+      <input type="range" id="minS" min="1" max="6" step="1" value="${c.min}">
+      <div class="field"><label>Longest combo</label><span class="val" id="maxSv"></span></div>
+      <input type="range" id="maxS" min="1" max="8" step="1" value="${c.max}">
+      <div class="field"><label>Rest after each combo</label><span class="val" id="restv"></span></div>
+      <input type="range" id="rest" min="1" max="15" step="0.5" value="${c.rest}">
+      <div class="field"><label>Gap between strikes</label><span class="val" id="gapv"></span></div>
+      <input type="range" id="gap" min="0" max="1" step="0.05" value="${c.gap}">
+
+      <h2 class="sec">Flow</h2>
+      <div class="chips" id="flow">
+        <button class="chip" data-f="library">Set combos</button>
+        <button class="chip" data-f="mixed">Mixed</button>
+        <button class="chip" data-f="free">Freestyle</button>
+      </div>
+      <p class="note">Set combos come from a list a coach would call. Freestyle builds new ones from which strikes actually feed into each other. Mixed alternates.</p>
+
+      <h2 class="sec">Level</h2>
+      <div class="chips" id="level">
+        <button class="chip" data-l="1">Basics</button>
+        <button class="chip" data-l="2">Intermediate</button>
+        <button class="chip" data-l="3">Advanced</button>
+      </div>
+
+      <h2 class="sec">Techniques</h2>
+      <div class="chips" id="groups">
+        <button class="chip" data-g="punch">Punches</button>
+        <button class="chip" data-g="kick">Kicks</button>
+        <button class="chip" data-g="knee">Knees</button>
+        <button class="chip" data-g="elbow">Elbows</button>
+        <button class="chip" data-g="defense">Defense</button>
+      </div>
+
+      <h2 class="sec">Stance</h2>
+      <div class="chips" id="stance">
+        <button class="chip" data-s="orthodox">Orthodox</button>
+        <button class="chip" data-s="southpaw">Southpaw</button>
+      </div>
+
+      <h2 class="sec">Rounds</h2>
+      <div class="chips" id="roundmode">
+        <button class="chip" data-r="on">Round timer</button>
+        <button class="chip" data-r="off">Endless</button>
+      </div>
+      <div class="field"><label>Round length</label><span class="val" id="rlenv"></span></div>
+      <input type="range" id="rlen" min="60" max="360" step="30" value="${c.roundLen}">
+      <div class="field"><label>Rest between rounds</label><span class="val" id="blenv"></span></div>
+      <input type="range" id="blen" min="15" max="180" step="15" value="${c.breakLen}">
+      <div class="field"><label>Rounds</label><span class="val" id="rnumv"></span></div>
+      <input type="range" id="rnum" min="1" max="12" step="1" value="${c.rounds}">`,
+    editorWire:(c, api)=>{
+      api.bind('minS','min', v=>v, v=>{ if(c.max < v){ el('maxS').value = v; el('maxSv').textContent = v; c.max = v; } });
+      api.bind('maxS','max', v=>v, v=>{ if(c.min > v){ el('minS').value = v; el('minSv').textContent = v; c.min = v; } });
+      api.bind('rest','rest', v=>v.toFixed(1)+'s');
+      api.bind('gap','gap', v=>v.toFixed(2)+'s');
+      api.bind('rlen','roundLen', v=>fmt(v));
+      api.bind('blen','breakLen', v=>fmt(v));
+      api.bind('rnum','rounds', v=>v);
+      api.chips('flow',      b=>b.dataset.f === c.flow,               b=>{ c.flow = b.dataset.f; });
+      api.chips('level',     b=>+b.dataset.l === c.level,             b=>{ c.level = +b.dataset.l; });
+      api.chips('stance',    b=>b.dataset.s === c.stance,             b=>{ c.stance = b.dataset.s; });
+      api.chips('roundmode', b=>(b.dataset.r === 'on') === c.useRounds, b=>{ c.useRounds = b.dataset.r === 'on'; });
+      api.chips('groups',    b=>c.groups[b.dataset.g], b=>{
+        const on = !!c.groups[b.dataset.g];
+        if(on && Object.values(c.groups).filter(Boolean).length === 1) return;
+        c.groups[b.dataset.g] = !on;
+      });
+    },
+  },
+  run:{      name:'Running',        category:'physical', accent:'#E08145', ink:'#2A1408', kind:'timed',  blurb:'Distance, pace and splits'},
+  strength:{ name:'Strength',       category:'physical', accent:'#E07A6A', ink:'#2A100C', kind:'logged', blurb:'Sets, reps, push pull legs'},
+  meditate:{
+    name:'Meditation', category:'mental', accent:'#79A9A0', ink:'#0F1E1C',
+    ready:true, kind:'timed', blurb:'Timer, intervals and bowl',
+    line:s=>(s.detail && s.detail.completed) ? 'Sat the full length' : 'Ended early',
+    defaults:()=>({length:15, taps:5, spacing:2.2, interval:0, volume:.6, dim:true}),
+    summary:c=>[
+      `${c.length} min`,
+      c.interval ? `bell every ${c.interval} min` : 'no interval bell',
+      c.dim ? 'dim screen' : 'timer visible'
+    ].join(' · '),
+    facts:(c,done)=>[
+      [c.length+' min', 'Sitting length'],
+      [c.taps, 'Bowl taps'],
+      [c.interval ? c.interval+' min' : 'None', 'Interval bell'],
+      [done, 'Times done']
+    ],
+    editorHTML:c=>`
+      <h2 class="sec">Sitting</h2>
+      <div class="field"><label>Length</label><span class="val" id="mlenv"></span></div>
+      <input type="range" id="mlen" min="1" max="90" step="1" value="${c.length}">
+      <p class="note">The timer starts after the opening bowl finishes, so you get the full sit.</p>
+
+      <h2 class="sec">Interval bell</h2>
+      <div class="chips" id="minterval">
+        ${[0,2,5,10,15].map(v=>`<button class="chip" data-i="${v}">${v?v+' min':'Off'}</button>`).join('')}
+      </div>
+      <p class="note">A single tap at that spacing, to re-anchor without ending the sit.</p>
+
+      <h2 class="sec">Bowl</h2>
+      <div class="field"><label>Taps at each end</label><span class="val" id="mtapsv"></span></div>
+      <input type="range" id="mtaps" min="1" max="7" step="1" value="${c.taps}">
+      <div class="field"><label>Spacing between taps</label><span class="val" id="mspacev"></span></div>
+      <input type="range" id="mspace" min="1" max="4" step="0.1" value="${c.spacing}">
+      <div class="field"><label>Volume</label><span class="val" id="mvolv"></span></div>
+      <input type="range" id="mvol" min="0.1" max="1" step="0.05" value="${c.volume}">
+      <button class="ghost" id="mtest">Hear the bowl</button>
+
+      <h2 class="sec">Screen</h2>
+      <div class="chips" id="mdim">
+        <button class="chip" data-d="on">Dim</button>
+        <button class="chip" data-d="off">Show timer</button>
+      </div>
+      <p class="note">Dim fades the clock almost out so it does not pull at you. Tap the screen to check the time.</p>`,
+    editorWire:(c, api)=>{
+      api.bind('mlen','length', v=>v+' min');
+      api.bind('mtaps','taps', v=>v);
+      api.bind('mspace','spacing', v=>v.toFixed(1)+'s');
+      api.bind('mvol','volume', v=>Math.round(v*100)+'%');
+      api.chips('minterval', b=>+b.dataset.i === c.interval, b=>{ c.interval = +b.dataset.i; });
+      api.chips('mdim', b=>(b.dataset.d === 'on') === c.dim, b=>{ c.dim = b.dataset.d === 'on'; });
+      el('mtest').addEventListener('click', ()=>{ ensureAudio(); bowl(actx.currentTime + .05, c.volume, null); });
+    },
+  },
+  journal:{  name:'Journaling',     category:'mental',   accent:'#9490DC', ink:'#14122A', kind:'written',blurb:'Daily writing'},
+  cbt:{      name:'Thought record', category:'mental',   accent:'#7CACD4', ink:'#0D1928', kind:'written',blurb:'CBT worksheets'},
+};
+const typeOf = id => TYPES[id] || TYPES.muaythai;
+const summaryOf = ex => ex.logOnly ? 'Logged by hand'
+  : (typeOf(ex.type).summary ? typeOf(ex.type).summary(ex.cfg) : typeOf(ex.type).blurb);
+
+/* ══ storage ═══════════════════════════════════════════════════ */
+const K_GLOBAL='practice.global.v1', K_EX='practice.exercises.v1', K_SESSIONS='practice.sessions.v1';
+let G = {rate:.95, pitch:1, callouts:'words', voiceURI:null, units:'lb', audioMode:'playback'};
+let exercises = [], sessions = [];
+
+const read = (k,f)=>{ try{ const v=JSON.parse(localStorage.getItem(k)||'null'); return v==null?f:v; }catch(e){ return f; } };
+/* Storage can hold valid JSON of the wrong shape — a half-finished
+   write, a future version, a hand-edited value. Booting straight into
+   it used to throw before any UI existed, leaving no way to recover. */
+const readList = (k,f)=>{ const v = read(k,null); return Array.isArray(v) ? v.filter(x=>x && typeof x === 'object') : f; };
+let storageBroken = false;
+const write = (k,v)=>{
+  try{ localStorage.setItem(k, JSON.stringify(v)); storageBroken = false; }
+  catch(e){ storageBroken = true; }
+};
+const saveGlobal = ()=>write(K_GLOBAL, G);
+const saveEx = ()=>write(K_EX, exercises);
+const saveSessions = ()=>write(K_SESSIONS, sessions);
+
+function boot(){
+  Object.assign(G, read(K_GLOBAL, {}));
+  exercises = readList(K_EX, null);
+  sessions  = readList(K_SESSIONS, null);
+
+  if(Array.isArray(exercises)) exercises = exercises.filter(e=>e.id && e.type && e.cfg);
+  if(exercises === null || !exercises.length){
+    /* v2.0 kept these as "routines"; before that everything lived in one settings blob */
+    const prior = readList('practice.routines.v1', null);
+    if(prior){
+      exercises = prior.map(r=>({
+        id:r.id, name:r.name, type:r.practice || 'muaythai',
+        category: typeOf(r.practice || 'muaythai').category, cfg:r.cfg
+      }));
+    } else {
+      const ex = {id:'ex-starter', name:'Everyday rounds', type:'muaythai',
+                  category:'physical', cfg:TYPES.muaythai.defaults()};
+      const old = read('comboCaller.settings.v1', null);
+      if(old){
+        for(const k of Object.keys(ex.cfg)){
+          if(k === 'groups') Object.assign(ex.cfg.groups, old.groups || {});
+          else if(k in old) ex.cfg[k] = old[k];
+        }
+        ['rate','pitch','callouts','voiceURI'].forEach(k=>{ if(k in old) G[k] = old[k]; });
+        saveGlobal();
+      }
+      exercises = [ex];
+    }
+    saveEx();
+  }
+  /* Records written by any earlier version get normalised in place —
+     the v2.0 key is the same one, so they arrive without type or category. */
+  if(sessions === null) sessions = readList('comboCaller.sessions.v1', []);
+  const home = exercises.find(e=>e.type === 'muaythai');
+  let patched = false;
+  sessions = sessions.filter(s=>typeof s.start === 'number' && typeof s.dur === 'number').map(s=>{
+    if(s.type && s.category && s.name) return s;
+    patched = true;
+    const type = s.type || s.practice || 'muaythai';
+    return {
+      ...s, type,
+      category: s.category || typeOf(type).category,
+      exerciseId: s.exerciseId || s.routineId || (home ? home.id : null),
+      name: s.name || s.routine || typeOf(type).name,
+    };
+  });
+  if(patched || read(K_SESSIONS, null) === null) saveSessions();
+}
+
+/* ══ helpers ═══════════════════════════════════════════════════ */
+const el = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = s => `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
+const DAY = 86400000;
+const dayStart   = d => { const x=new Date(d); x.setHours(0,0,0,0); return x; };
+/* Clock-shift days are 23 or 25 hours long, so stepping by a fixed
+   86,400,000 ms lands an hour off and files sessions on the wrong day.
+   Calendar arithmetic keeps every bucket on its own midnight. */
+const addDays    = (d,n) => { const x=new Date(d); x.setDate(x.getDate()+n); return x; };
+const weekStart  = d => { const x=dayStart(d); x.setDate(x.getDate()-((x.getDay()+6)%7)); return x; };
+const monthStart = d => { const x=new Date(d); x.setDate(1); x.setHours(0,0,0,0); return x; };
+const inRange = (s,a,b) => s.start >= a.getTime() && s.start < b.getTime();
+const mins = list => Math.round(list.reduce((n,s)=>n+s.dur,0)/60);
+const hhmm = sec => { const h=Math.floor(sec/3600), m=Math.round((sec%3600)/60); return h?`${h}h ${m}m`:`${m}m`; };
+const timeOf = ms => new Date(ms).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+
+boot();
+let S = TYPES.muaythai.defaults();
+const loadCfg = ex => { S = Object.assign(typeOf(ex.type).defaults(), JSON.parse(JSON.stringify(ex.cfg))); };
+const WORDS = {'1':'one','2':'two','3':'three','4':'four','5':'five','6':'six'};
+const spoken = (t,L) => (G.callouts === 'numbers' && t.num) ? (t.nsay || WORDS[t.num]) : t.label(L);
+const sides = () => S.stance === 'orthodox' ? {lead:'left', rear:'right'} : {lead:'right', rear:'left'};
+
+/* A schedule is an intention, not a scoreboard. Home shows what is
+   planned and what is done; days you missed simply stay empty there.
+   Stats is where the gaps become visible, on purpose. */
+const DAYNAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const DAYINIT  = ['S','M','T','W','T','F','S'];
+const scheduledOn = (ex, d) => !!(ex.sched && ex.sched.days && ex.sched.days.includes(d.getDay()));
+const plannedFor  = d => exercises.filter(e=>scheduledOn(e, d));
+function didOn(exId, d){
+  const a = dayStart(d), b = addDays(a, 1);
+  return sessions.some(s=>s.exerciseId === exId && inRange(s, a, b));
+}
+function adherence(a, b){
+  const now = new Date();
+  let plan = 0, hit = 0;
+  for(const d = new Date(a); d < b; d.setDate(d.getDate()+1)){
+    if(dayStart(d) >= dayStart(now)) break;   // today is still in progress, and the future is not a miss
+    plannedFor(d).forEach(e=>{ plan++; if(didOn(e.id, d)) hit++; });
+  }
+  return {plan, hit};
+}
+function schedLabel(ex){
+  if(!ex.sched || !ex.sched.days || !ex.sched.days.length) return '';
+  const d = ex.sched.days.slice().sort();
+  if(d.length === 7) return 'Every day';
+  if(d.length === 5 && d.every(x=>x >= 1 && x <= 5)) return 'Weekdays';
+  return d.map(x=>DAYNAMES[x]).join(' ');
+}
+
+/* Every session record is built here so the three writers — a driven
+   session, the strength table, and a hand entry — cannot drift apart.
+   They have before: one of them once omitted category entirely. */
+function makeSession(ex, f){
+  const type = ex ? ex.type : 'muaythai';
+  const rec = {
+    type,
+    category: ex ? ex.category : typeOf(type).category,
+    exerciseId: ex ? ex.id : null,
+    name: ex ? ex.name : typeOf(type).name,
+    start: f.start,
+    end: f.end != null ? f.end : f.start + (f.dur || 0) * 1000,
+    dur: f.dur,
+    source: f.source || 'app',
+  };
+  if(f.detail) rec.detail = f.detail;
+  if(f.effort) rec.effort = f.effort;
+  if(f.note)   rec.note = f.note;
+  return rec;
+}
+function commitSession(rec){
+  if(!rec || !(rec.dur >= 30)) return null;   // too short to be real
+  sessions.push(rec);
+  saveSessions(); renderStats(); renderHome();
+  return rec;
+}
+function holdScreen(){
+  holdScreen();
+}
+function releaseScreen(){
+  try{ wakeLock && wakeLock.release(); }catch(e){}
+  wakeLock = null;
+}
+
+function lastDone(id){
+  const hits = sessions.filter(s=>s.exerciseId === id).sort((a,b)=>b.start-a.start);
+  if(!hits.length) return 'Not done yet';
+  const days = Math.floor((dayStart(new Date()) - dayStart(hits[0].start))/DAY);
+  return days === 0 ? 'Done today' : days === 1 ? 'Yesterday' : `${days} days ago`;
+}
+
+/* ══ backup ════════════════════════════════════════════════════
+   One file holding everything. Import MERGES rather than replaces,
+   so restoring an old backup can never delete what you have logged
+   since. Modules add their own data through EXPORTERS. */
+const EXPORTERS = {};
+const sessionKey = s => `${s.start}|${s.exerciseId || ''}`;
+
+function buildBackup(){
+  const data = {
+    app:'practice', format:1, version:APP_VERSION,
+    exported:new Date().toISOString(),
+    settings:G, exercises, sessions
+  };
+  for(const k of Object.keys(EXPORTERS)) data[k] = EXPORTERS[k].get();
+  return data;
+}
+function inspectBackup(data){
+  if(!data || data.app !== 'practice' || !Array.isArray(data.sessions)) return null;
+  const haveEx = new Set(exercises.map(e=>e.id));
+  const haveS  = new Set(sessions.map(sessionKey));
+  const newEx = (data.exercises||[]).filter(e=>e && e.id && e.cfg && !haveEx.has(e.id));
+  const newS  = (data.sessions||[]).filter(s=>s && typeof s.start === 'number'
+                  && typeof s.dur === 'number' && !haveS.has(sessionKey(s)));
+  const extra = {};
+  for(const k of Object.keys(EXPORTERS)) if(data[k]) extra[k] = EXPORTERS[k].count(data[k]);
+  const span = newS.length
+    ? [new Date(Math.min(...newS.map(x=>x.start))), new Date(Math.max(...newS.map(x=>x.start)))]
+    : null;
+  return {data, newEx, newS, extra, span};
+}
+function applyBackup(found, withSettings){
+  found.newEx.forEach(e=>exercises.push(e));
+  found.newS.forEach(s=>sessions.push(s));
+  sessions.sort((a,b)=>a.start - b.start);
+  for(const k of Object.keys(EXPORTERS)) if(found.data[k]) EXPORTERS[k].merge(found.data[k]);
+  if(withSettings && found.data.settings && typeof found.data.settings === 'object'){
+    Object.keys(G).forEach(k=>{ if(k in found.data.settings) G[k] = found.data.settings[k]; });
+    saveGlobal();
+  }
+  saveEx(); saveSessions();
+  renderHome(); renderStats();
+}
+
+/* ══ router ════════════════════════════════════════════════════ */
+let screen = 'home', cur = null, editing = null;
+/* Screens injected by a module can register where Back returns to. */
+const BACKTO = {};
+const TITLES = {home:'Practice', stats:'Stats', settings:'Settings', newtype:'New exercise', exercise:'Exercise', editor:'Edit', med:'Meditation', log:'Log a session', preset:'Choose a plan'};
+
+function show(name){
+  screen = name;
+  document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('on', s.id === 's'+'-'+name));
+  const sec = el('s'+'-'+name);
+  document.body.classList.toggle('session', !!sec && sec.classList.contains('sessionScreen'));
+  const rooted = ['home','stats','settings'].includes(name);
+  el('back').hidden = rooted;
+  el('back').textContent = (name === 'editor') ? '✕' : '‹';
+  el('title').textContent = name === 'editor' && editing && editing.isNew ? 'New exercise' : (TITLES[name] || 'Practice');
+  document.querySelectorAll('.nav button').forEach(b=>{
+    const on = b.dataset.tab === name || (!rooted && name !== 'session' && b.dataset.tab === 'home');
+    b.setAttribute('aria-current', on ? 'page' : 'false');
+  });
+  const sc = el('s-'+name).querySelector('.scroll');
+  if(sc) sc.scrollTop = 0;
+}
+function setAccent(typeId){
+  const t = typeOf(typeId);
+  document.documentElement.style.setProperty('--accent', t.accent);
+  document.documentElement.style.setProperty('--ink', t.ink);
+}
+const resetAccent = ()=>{
+  document.documentElement.style.setProperty('--accent', '#C9A227');
+  document.documentElement.style.setProperty('--ink', '#231014');
+};
+el('back').addEventListener('click', ()=>{
+  if(screen === 'log'){
+    if(logFrom === 'exercise' && cur) return openExercise(cur.id);
+    if(logFrom === 'stats'){ renderStats(); return show('stats'); }
+    resetAccent(); renderHome(); return show('home');
+  }
+  if(BACKTO[screen]) return show(BACKTO[screen]);
+  if(screen === 'editor') return leaveEditor();
+  if(screen === 'preset'){ resetAccent(); renderTypes(); return show('newtype'); }
+  if(screen === 'exercise' || screen === 'newtype'){ resetAccent(); renderHome(); return show('home'); }
+  resetAccent(); show('home');
+});
+el('nav').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b || running) return;
+  resetAccent();
+  if(b.dataset.tab === 'home'){ renderHome(); show('home'); }
+  if(b.dataset.tab === 'stats'){ renderStats(); show('stats'); }
+  if(b.dataset.tab === 'settings') show('settings');
+});
+
+/* ══ screen: home ══════════════════════════════════════════════ */
+function balanceBlock(){
+  const a = weekStart(new Date()), b = addDays(a, 7);
+  const wk = sessions.filter(s=>inRange(s,a,b));
+  const per = CATS.map(c=>({c, m: mins(wk.filter(s=>s.category === c.id))}));
+  const peak = Math.max(1, ...per.map(p=>p.m));
+  return `<div class="balance">
+    <p class="eyebrow">This week</p>
+    ${per.map(p=>`<div class="bal">
+      <span class="dot" style="background:${p.c.color}"></span>
+      <span class="lab">${p.c.id === 'physical' ? 'Body' : 'Mind'}</span>
+      <span class="track"><i style="width:${(p.m/peak)*100}%;background:${p.c.color}"></i></span>
+      <span class="amt">${p.m ? hhmm(p.m*60) : '—'}</span>
+    </div>`).join('')}
+  </div>`;
+}
+function todayBlock(){
+  const now = new Date();
+  const planned = plannedFor(now);
+  if(!planned.length) return '';
+  const left = planned.filter(e=>!didOn(e.id, now)).length;
+  return `<h2 class="grp" style="margin-top:0">Today${left ? '' : ' · all done'}</h2>`
+    + planned.map(e=>{
+        const t = typeOf(e.type), done = didOn(e.id, now);
+        return `<button class="row today${done?' isdone':''}" data-e="${e.id}">
+          <span class="tick" style="background:${t.accent}"></span>
+          <span class="grow">
+            <span class="name">${esc(e.name)}</span>
+            <span class="sub">${esc(t.name)}${done ? ' · done' : ''}</span>
+          </span>
+          <span class="mark">${done ? '✓' : ''}</span>
+        </button>`;
+      }).join('');
+}
+function renderHome(){
+  const sections = CATS.map(c=>{
+    const list = exercises.filter(e=>e.category === c.id);
+    return `<h2 class="grp">${esc(c.name)}</h2>` + (list.length
+      ? list.map(e=>{
+          const t = typeOf(e.type), done = didOn(e.id, new Date());
+          return `<button class="row ${t.ready?'':'dim'}${done?' isdone':''}" data-e="${e.id}">
+            <span class="tick" style="background:${t.accent}"></span>
+            <span class="grow">
+              <span class="name">${esc(e.name)}</span>
+              <span class="sub">${esc(t.name)} · ${esc(summaryOf(e))}<br>${lastDone(e.id)}${schedLabel(e) ? ' · ' + esc(schedLabel(e)) : ''}</span>
+            </span>
+            ${done ? `<span class="donemark" style="color:${t.accent}">✓</span>` : ''}
+            <span class="go">${t.ready?'›':'Soon'}</span>
+          </button>`;
+        }).join('')
+      : `<div class="nothing">Nothing here yet.</div>`);
+  }).join('');
+  el('homeBody').innerHTML = todayBlock() + balanceBlock() + sections
+    + `<button class="addbtn" id="newEx">+ New exercise</button>`;
+}
+el('homeBody').addEventListener('click', e=>{
+  if(e.target.closest('#newEx')){ renderTypes(); return show('newtype'); }
+  const b = e.target.closest('[data-e]'); if(!b) return;
+  openExercise(b.dataset.e);
+});
+
+/* ══ screen: pick a type ═══════════════════════════════════════ */
+function renderTypes(){
+  el('typeList').innerHTML = CATS.map(c=>{
+    const ids = Object.keys(TYPES).filter(k=>TYPES[k].category === c.id);
+    return `<h2 class="grp">${esc(c.name)}</h2>` + ids.map(k=>{
+      const t = TYPES[k];
+      return `<button class="row ${t.ready?'':'dim'}" data-t="${k}" ${t.ready?'':'disabled'}>
+        <span class="tick" style="background:${t.accent}"></span>
+        <span class="grow">
+          <span class="name">${esc(t.name)}</span>
+          <span class="sub">${esc(t.blurb)}</span>
+        </span>
+        <span class="go">${t.ready?'›':'Soon'}</span>
+      </button>`;
+    }).join('');
+  }).join('');
+}
+el('typeList').addEventListener('click', e=>{
+  const b = e.target.closest('[data-t]'); if(!b) return;
+  const t = TYPES[b.dataset.t]; if(!t || !t.ready) return;
+  setAccent(b.dataset.t);
+  renderPresets(b.dataset.t);
+  return show('preset');
+});
+
+/* ── plans ─────────────────────────────────────────────────────
+   A plan is just a prefilled config. Some produce several
+   exercises at once — a push/pull/legs split is three things on
+   three days, not one. Everything stays editable afterwards. */
+let presetType = null;
+function renderPresets(typeId){
+  presetType = typeId;
+  const t = typeOf(typeId);
+  const list = t.templates || [];
+  el('presetList').innerHTML =
+    `<p class="eyebrow">${esc(t.name)}</p>
+     <h2 class="hero" style="font-size:clamp(1.9rem,9vw,2.8rem)">Start from a plan</h2>
+     <p class="heroSub">Pick something close and adjust it, or build your own from nothing.</p>`
+    + list.map((pl,i)=>`
+      <button class="row" data-pl="${i}">
+        <span class="tick"></span>
+        <span class="grow">
+          <span class="name" style="font-size:18px">${esc(pl.name)}</span>
+          <span class="sub">${esc(pl.blurb)}</span>
+        </span>
+        <span class="go">›</span>
+      </button>`).join('')
+    + `<button class="addbtn" id="scratchEx">+ Build my own</button>`;
+}
+el('presetList').addEventListener('click', e=>{
+  const t = TYPES[presetType]; if(!t) return;
+  if(e.target.closest('#scratchEx')) return makeExercise(presetType, null);
+  const b = e.target.closest('[data-pl]'); if(!b) return;
+  const pl = (t.templates || [])[+b.dataset.pl]; if(!pl) return;
+  makeExercise(presetType, pl);
+});
+function makeExercise(typeId, pl){
+  const t = TYPES[typeId];
+  const ex = {id:'ex'+Date.now(),
+              name: pl ? pl.name : 'New ' + t.name.toLowerCase(),
+              type:typeId, category:t.category,
+              cfg: Object.assign(t.defaults(), pl ? JSON.parse(JSON.stringify(pl.cfg || {})) : {})};
+  if(pl && pl.logOnly) ex.logOnly = true;
+  cur = null;                       // nothing exists until Save is pressed
+  setAccent(typeId);
+  openEditor(ex, true);
+}
+/* ══ screen: one exercise ══════════════════════════════════════ */
+function logOnlyFacts(mine){
+  const total = mine.reduce((n,s)=>n+s.dur,0);
+  const last = mine.slice().sort((a,b)=>b.start-a.start)[0];
+  return [
+    [mine.length, 'Sessions'],
+    [total ? hhmm(total) : '—', 'Total time'],
+    [mine.length ? hhmm(Math.round(total/mine.length)) : '—', 'Typical'],
+    [last ? new Date(last.start).toLocaleDateString([], {month:'short', day:'numeric'}) : '—', 'Last time'],
+  ];
+}
+function openExercise(id){
+  cur = exercises.find(e=>e.id === id);
+  if(!cur){ renderHome(); return show('home'); }
+  const t = typeOf(cur.type);
+  setAccent(cur.type);
+  const mine = sessions.filter(s=>s.exerciseId === cur.id);
+  const done = mine.length;
+  const facts = cur.logOnly ? logOnlyFacts(mine)
+    : (t.facts ? t.facts(cur.cfg, done) : [[done,'Times done']]);
+  el('exerciseDetail').innerHTML = `
+    <p class="eyebrow">${esc(t.name)} · ${esc(catOf(cur.category).name)}</p>
+    <h2 class="hero">${esc(cur.name)}</h2>
+    <p class="heroSub">${esc(summaryOf(cur))}${schedLabel(cur) ? ' · ' + esc(schedLabel(cur)) : ''}</p>
+    <div class="facts">${facts.map(f=>`<div class="fact"><b>${esc(f[0])}</b><span>${esc(f[1])}</span></div>`).join('')}</div>
+    ${cur.logOnly
+      ? `<button class="primary" id="logForEx">Log a session</button>`
+      : `<button class="primary" id="startEx" ${t.ready?'':'disabled'}>${t.ready ? 'Start' : 'Coming soon'}</button>`}
+    ${t.ready ? '<button class="ghost" id="editEx">Edit exercise</button>' : ''}
+    <button class="ghost" id="dupEx">Duplicate</button>
+    ${cur.logOnly ? '' : `<button class="ghost" id="logForEx">${esc(t.logPastLabel || 'Log a past session')}</button>`}
+    <button class="ghost danger" id="delEx">Delete exercise</button>`;
+  show('exercise');
+}
+el('exerciseDetail').addEventListener('click', e=>{
+  if(!cur) return;
+  if(e.target.closest('#startEx') && typeOf(cur.type).ready){
+    loadCfg(cur);
+    (typeOf(cur.type).open || openSession)();
+  }
+  if(e.target.closest('#logForEx')){
+    const ty = typeOf(cur.type);
+    /* Sets and weights are recalled facts, so those types reopen their
+       own table. Combos and rounds are generated, so those get the
+       duration form instead — inventing a combo count would be fiction. */
+    if(!cur.logOnly && ty.logPast){ loadCfg(cur); return ty.logPast(); }
+    return openLog(cur.id, null);
+  }
+  if(e.target.closest('#editEx')) openEditor(cur, false);
+  if(e.target.closest('#dupEx')){
+    const copy = JSON.parse(JSON.stringify(cur));
+    copy.id = 'ex'+Date.now(); copy.name = cur.name+' copy';
+    exercises.push(copy); saveEx(); openExercise(copy.id);
+  }
+  const del = e.target.closest('#delEx');
+  if(del){
+    if(del.dataset.armed !== '1'){
+      del.dataset.armed = '1'; del.textContent = 'Tap again to delete';
+      setTimeout(()=>{ del.dataset.armed='0'; del.textContent='Delete exercise'; }, 4000);
+      return;
+    }
+    exercises = exercises.filter(x=>x.id !== cur.id); saveEx(); cur = null;
+    resetAccent(); renderHome(); show('home');
+  }
+});
+
+/* ══ screen: editor ════════════════════════════════════════════ */
+function openEditor(source, isNew){
+  /* Edits go into a working copy. Nothing reaches the stored list
+     until Save, so backing out of a new exercise leaves nothing
+     behind and abandoning an edit changes nothing. */
+  const ex = (editing && editing.ex === source) ? source : JSON.parse(JSON.stringify(source));
+  editing = {ex, isNew, sourceId:source.id};
+  const c = ex.cfg, t = typeOf(ex.type);
+  el('editorBody').innerHTML = `
+    <h2 class="sec">Name</h2>
+    <input type="text" id="rname" value="${esc(ex.name)}" maxlength="34" autocomplete="off">
+    <p class="note">${esc(t.name)} · ${esc(catOf(ex.category).name)}</p>
+
+    <h2 class="sec">Repeat</h2>
+    <div class="chips" id="exDays">
+      ${DAYINIT.map((d,i)=>`<button class="chip day" data-day="${i}">${d}</button>`).join('')}
+    </div>
+    <p class="note">Scheduled days appear under Today on the home screen. Leave all off for no schedule.</p>
+
+    <h2 class="sec">How it runs</h2>
+    <div class="chips" id="exMode">
+      <button class="chip" data-mode="app">App-guided</button>
+      <button class="chip" data-mode="log">Log only</button>
+    </div>
+    <p class="note">${ex.logOnly
+      ? 'For training that happens away from the phone — a class, a session with a coach. It keeps its own history and streak, you just enter it afterwards.'
+      : 'The app runs this one and records what happened.'}</p>
+    ${ex.logOnly ? '' : (t.editorHTML ? t.editorHTML(c) : '')}
+    <button class="primary" id="saveEx" style="margin-top:30px">${isNew ? 'Save exercise' : 'Save changes'}</button>
+    <button class="ghost" id="cancelEx">${isNew ? 'Discard' : 'Discard changes'}</button>`;
+
+  const paintDays = ()=>setChips('exDays', b=>!!(ex.sched && ex.sched.days || []).includes(+b.dataset.day));
+  paintDays();
+  el('exDays').addEventListener('click', ev=>{
+    const b = ev.target.closest('.chip'); if(!b) return;
+    const d = +b.dataset.day;
+    ex.sched = ex.sched || {days:[]};
+    ex.sched.days = ex.sched.days.includes(d)
+      ? ex.sched.days.filter(x=>x !== d)
+      : ex.sched.days.concat(d).sort();
+    paintDays();
+  });
+
+  setChips('exMode', b=>(b.dataset.mode === 'log') === !!ex.logOnly);
+  el('exMode').addEventListener('click', ev=>{
+    const b = ev.target.closest('.chip'); if(!b) return;
+    const wantLog = b.dataset.mode === 'log';
+    if(wantLog === !!ex.logOnly) return;
+    ex.logOnly = wantLog;
+    openEditor(ex, isNew);           // the rest of the form changes shape
+  });
+
+  const painters = [];
+  const api = {
+    bind(id, key, format, after){
+      const input = el(id), out = el(id+'v');
+      const sync = ()=>{ const v = parseFloat(input.value); c[key] = v; if(out) out.textContent = format(v); after && after(v); };
+      input.addEventListener('input', sync);
+      sync();
+    },
+    chips(id, isOn, onPick){
+      const repaint = ()=>setChips(id, isOn);
+      painters.push(repaint); repaint();
+      el(id).addEventListener('click', ev=>{
+        const b = ev.target.closest('.chip'); if(!b) return;
+        onPick(b); painters.forEach(p=>p());
+      });
+    }
+  };
+  if(!ex.logOnly && t.editorWire) t.editorWire(c, api);
+
+  el('rname').addEventListener('input', ev=>{
+    ex.name = ev.target.value.trim() || 'Untitled';
+  });
+  el('saveEx').addEventListener('click', ()=>{
+    if(editing.isNew){ exercises.push(ex); }
+    else {
+      const i = exercises.findIndex(x=>x.id === editing.sourceId);
+      if(i >= 0) exercises[i] = ex; else exercises.push(ex);
+    }
+    saveEx();
+    const id = ex.id;
+    editing = null;
+    renderHome();
+    openExercise(id);
+  });
+  el('cancelEx').addEventListener('click', leaveEditor);
+  show('editor');
+}
+function leaveEditor(){
+  const wasNew = editing && editing.isNew;
+  editing = null;
+  if(!wasNew && cur){ return openExercise(cur.id); }
+  resetAccent(); renderHome(); show('home');
+}
+function setChips(id, test){
+  const c = el(id); if(!c) return;
+  [...c.children].forEach(b=>b.setAttribute('aria-pressed', String(!!test(b))));
+}
+
+/* ══ audio ═════════════════════════════════════════════════════ */
+let actx = null;
+function bell(hits=1){
+  try{
+    if(!actx) return;
+    for(let h=0;h<hits;h++){
+      [640, 962].forEach((f,i)=>{
+        const o = actx.createOscillator(), g = actx.createGain();
+        const t0 = actx.currentTime + h*0.34;
+        o.type='sine'; o.frequency.value=f;
+        g.gain.setValueAtTime(0.0001,t0);
+        g.gain.exponentialRampToValueAtTime(i?0.12:0.3, t0+0.008);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0+1.5);
+        o.connect(g).connect(actx.destination);
+        o.start(t0); o.stop(t0+1.6);
+      });
+    }
+  }catch(e){}
+}
+
+/* ══ singing bowl ══════════════════════════════════════════════
+   A struck bowl is inharmonic — the partials are not whole multiples
+   of the fundamental, which is what makes it read as metal rather
+   than a chime. Each partial is doubled a few cents apart so the
+   tone beats slowly as it decays. */
+const PARTIALS = [[1,1.0,4.2],[2.71,.42,3.1],[5.15,.22,2.2],[8.42,.11,1.5],[12.6,.05,1.0]];
+let medGain = null;
+
+/* Safari 16.4+ exposes the audio session category. 'playback' is what
+   music apps use: it ignores the ringer switch, at the cost of taking
+   over from whatever else is playing. 'ambient' mixes but goes silent
+   with the switch. It has to be set inside the tap that starts audio. */
+function applyAudioSession(){
+  try{
+    if(navigator.audioSession) navigator.audioSession.type = G.audioMode || 'playback';
+  }catch(e){}
+}
+const audioSessionSupported = ()=> typeof navigator !== 'undefined' && !!navigator.audioSession;
+
+function ensureAudio(){
+  applyAudioSession();
+  try{
+    actx = actx || new (window.AudioContext||window.webkitAudioContext)();
+    if(actx.state === 'suspended') actx.resume();
+  }catch(e){}
+  return actx;
+}
+function bowl(t0, vol, dest){
+  if(!actx) return;
+  const out = dest || actx.destination;
+  const strike = actx.createOscillator(), sg = actx.createGain();
+  strike.type = 'triangle'; strike.frequency.value = 2400;
+  sg.gain.setValueAtTime(0.0001, t0);
+  sg.gain.exponentialRampToValueAtTime(vol*0.05, t0+0.004);
+  sg.gain.exponentialRampToValueAtTime(0.0001, t0+0.18);
+  strike.connect(sg).connect(out); strike.start(t0); strike.stop(t0+0.25);
+
+  PARTIALS.forEach(([ratio, amp, decay])=>{
+    [1, 1.0035].forEach((detune, k)=>{
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = 'sine';
+      o.frequency.value = 214 * ratio * detune;
+      const peak = Math.max(0.0002, vol * amp * (k ? 0.35 : 0.5));
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(peak, t0 + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + decay);
+      o.connect(g).connect(out);
+      o.start(t0); o.stop(t0 + decay + 0.1);
+    });
+  });
+}
+/* Loudness is perceived logarithmically, so stepping the gain evenly
+   sounds uneven — flat at first, then a sudden drop. Stepping evenly
+   in decibels is what actually reads as a smooth fade. 20 dB across
+   the sequence puts the quietest tap at a tenth of the loudest. */
+const FADE_DB = 20;
+function tapVolumes(n, dir){
+  const amps = [...Array(n)].map((_,i)=>{
+    const t = n === 1 ? 0 : i/(n-1);
+    return Math.pow(10, (-FADE_DB * t)/20);
+  });
+  return dir === 'down' ? amps : amps.slice().reverse();
+}
+
+/* ══ meditation ════════════════════════════════════════════════ */
+TYPES.muaythai.templates = [
+  {name:'Technical rounds', blurb:'Set combos, clean execution, generous reset',
+   cfg:{flow:'library', level:2, min:2, max:4, rest:6, gap:.15, rounds:5, roundLen:180,
+        groups:{punch:true,kick:true,knee:true,elbow:false,defense:false}}},
+  {name:'Bag work', blurb:'Everything on, longer combos, short reset',
+   cfg:{flow:'mixed', level:2, min:3, max:6, rest:3, gap:.08, rounds:6, roundLen:180,
+        groups:{punch:true,kick:true,knee:true,elbow:true,defense:false}}},
+  {name:'Conditioning burn', blurb:'Short rounds, almost no rest, keep moving',
+   cfg:{flow:'mixed', level:2, min:3, max:6, rest:1.5, gap:.05, rounds:8, roundLen:120,
+        breakLen:30, groups:{punch:true,kick:true,knee:true,elbow:false,defense:false}}},
+  {name:'Kicks and knees', blurb:'Legs only — teeps, roundhouses, knees',
+   cfg:{flow:'free', level:2, min:2, max:4, rest:5, gap:.12, rounds:5, roundLen:180,
+        groups:{punch:false,kick:true,knee:true,elbow:false,defense:false}}},
+  {name:'Defence and counters', blurb:'Slips, rolls and checks folded into every combo',
+   cfg:{flow:'free', level:3, min:3, max:5, rest:5, gap:.1, rounds:5, roundLen:180,
+        groups:{punch:true,kick:true,knee:false,elbow:false,defense:true}}},
+  {name:'Shadow boxing', blurb:'Basics only, slow and deliberate',
+   cfg:{flow:'library', level:1, min:2, max:3, rest:7, gap:.2, rounds:3, roundLen:180,
+        groups:{punch:true,kick:true,knee:false,elbow:false,defense:false}}},
+  {name:'Class with coaches', blurb:'Training you log by hand afterwards', logOnly:true, cfg:{}},
+];
+
+TYPES.meditate.templates = [
+  {name:'Ten minutes',       blurb:'A short daily sit', cfg:{length:10, taps:5, interval:0, dim:true}},
+  {name:'Twenty minute sit', blurb:'Bell every five minutes to re-anchor', cfg:{length:20, taps:5, interval:5, dim:true}},
+  {name:'Body scan',         blurb:'Half an hour, bell every ten', cfg:{length:30, taps:5, interval:10, dim:true}},
+  {name:'Evening wind-down', blurb:'Quiet, three taps, screen dark', cfg:{length:15, taps:3, interval:0, dim:true, volume:.4}},
+  {name:'Quick reset',       blurb:'Five minutes between other things', cfg:{length:5, taps:3, interval:0, dim:true}},
+];
+
+TYPES.meditate.open = ()=>openMed();
+let medTimer = null, medEndAt = 0, medStartAt = 0, peekTimer = null;
+
+function openMed(){
+  show('med');
+  el('medName').textContent = cur ? cur.name : 'Meditation';
+  el('medPhase').textContent = 'Opening';
+  el('medHint').textContent = S.dim ? 'Tap the screen to check the time' : '';
+  el('medGo').textContent = 'End session';
+  el('medPause').textContent = 'Pause';
+  el('medPause').hidden = false;
+  el('medClock').textContent = fmt(S.length*60);
+  document.body.classList.toggle('dim', !!S.dim);
+  document.body.classList.remove('peek');
+  ensureAudio();
+  startMed();
+}
+let medCloseAt = 0, medLeftMs = 0;
+
+/* Bells are scheduled on the audio clock so the closing bowl cannot
+   drift. Pausing therefore means tearing the queue down and rebuilding
+   it from the time remaining — the queue is the guarantee, so it has to
+   be rebuilt exactly rather than nudged. */
+function scheduleSit(remainingSec, withOpening){
+  if(medGain){ try{ medGain.disconnect(); }catch(e){} }
+  medGain = actx.createGain();
+  medGain.gain.value = 1;
+  medGain.connect(actx.destination);
+
+  const t0 = actx.currentTime + 0.2;
+  let sitStart = t0;
+  if(withOpening){
+    tapVolumes(S.taps, 'down').forEach((v,i)=>bowl(t0 + i*S.spacing, v*S.volume, medGain));
+    sitStart = t0 + (S.taps-1)*S.spacing + 1.2;
+  }
+  const sitEnd = sitStart + remainingSec;
+  if(S.interval > 0){
+    for(let t = sitStart + S.interval*60; t < sitEnd - 1; t += S.interval*60){
+      bowl(t, 0.55*S.volume, medGain);
+    }
+  }
+  tapVolumes(S.taps, 'up').forEach((v,i)=>bowl(sitEnd + i*S.spacing, v*S.volume, medGain));
+
+  const now = Date.now();
+  medStartAt = now + (sitStart - actx.currentTime)*1000;
+  medEndAt   = now + (sitEnd   - actx.currentTime)*1000;
+  medCloseAt = medEndAt + ((S.taps-1)*S.spacing + 1.5)*1000;
+}
+
+function startMed(){
+  running = true;
+  resetPause();
+  live = {start: Date.now(), completed:false};
+  holdScreen();
+
+  scheduleSit(S.length*60, true);
+  const closeAt = () => medCloseAt;
+
+  clearInterval(medTimer);
+  medTimer = setInterval(()=>{
+    if(!running || paused) return;
+    const t = Date.now();
+    if(t < medStartAt){
+      el('medPhase').textContent = 'Opening';
+      el('medClock').textContent = fmt(S.length*60);
+    } else if(t < medEndAt){
+      el('medPhase').textContent = 'Sitting';
+      el('medClock').textContent = fmt(Math.ceil((medEndAt - t)/1000));
+    } else {
+      el('medPhase').textContent = 'Closing';
+      el('medClock').textContent = '0:00';
+      if(!live) return;
+      live.completed = true;
+      document.body.classList.remove('dim');
+      el('medHint').textContent = 'Session complete';
+      el('medGo').textContent = 'Done';
+      if(t >= closeAt()) finishMed(false);
+    }
+  }, 250);
+}
+function pauseMed(on){
+  if(!running) return;
+  if(on){
+    medLeftMs = Math.min(S.length*60*1000, Math.max(0, medEndAt - Date.now()));
+    if(medGain){ try{ medGain.disconnect(); }catch(e){} medGain = null; }
+    setPaused(true);
+    el('medPhase').textContent = 'Paused';
+    el('medPause').textContent = 'Resume';
+    document.body.classList.remove('dim');
+  } else {
+    setPaused(false);
+    scheduleSit(medLeftMs/1000, false);   // no opening bells on resume
+    el('medPause').textContent = 'Pause';
+    document.body.classList.toggle('dim', !!S.dim);
+  }
+}
+el('medPause').addEventListener('click', ()=>pauseMed(!paused));
+
+function finishMed(silence){
+  running = false;
+  setPaused(false);
+  el('medPause').hidden = true;
+  clearInterval(medTimer); medTimer = null;
+  if(silence && medGain){
+    try{
+      const n = actx.currentTime;
+      medGain.gain.cancelScheduledValues(n);
+      medGain.gain.setValueAtTime(medGain.gain.value, n);
+      medGain.gain.exponentialRampToValueAtTime(0.0001, n + 0.4);
+    }catch(e){}
+  }
+  releaseScreen();
+  document.body.classList.remove('dim','peek');
+  el('medPhase').textContent = 'Done';
+  el('medGo').textContent = 'Done';
+  endSession();
+}
+el('medStage').addEventListener('click', ()=>{
+  if(!document.body.classList.contains('dim')) return;
+  document.body.classList.add('peek');
+  clearTimeout(peekTimer);
+  peekTimer = setTimeout(()=>document.body.classList.remove('peek'), 4000);
+});
+el('medGo').addEventListener('click', ()=>{
+  if(running) finishMed(true);
+  cur ? openExercise(cur.id) : show('home');
+});
+el('medQuit').addEventListener('click', ()=>{
+  if(running) finishMed(true);
+  cur ? openExercise(cur.id) : show('home');
+});
+
+/* ══ speech ════════════════════════════════════════════════════ */
+let voice = null, silentCount = 0, voiceList = [];
+function quality(v){
+  let q = 0;
+  if(/premium/i.test(v.name)) q += 100;
+  if(/enhanced/i.test(v.name)) q += 80;
+  if(/siri/i.test(v.name)) q += 60;
+  if(/natural|neural|wavenet/i.test(v.name)) q += 60;
+  if(/^(ava|samantha|allison|susan|nicky|evan|zoe|joelle|noelle)/i.test(v.name)) q += 30;
+  if(/^(daniel|karen|moira|tessa|serena)/i.test(v.name)) q += 20;
+  if(/google us english/i.test(v.name)) q += 40;
+  if(/compact|eloquence|novelty|whisper|bells|bad news|bahh|boing|jester|organ|superstar|trinoids|wobble|zarvox/i.test(v.name)) q -= 90;
+  if(/en[-_]US/i.test(v.lang)) q += 10;
+  if(v.localService) q += 5;
+  return q;
+}
+function pickVoice(){
+  if(!('speechSynthesis' in window)) return;
+  voiceList = speechSynthesis.getVoices()
+    .filter(x=>/^en/i.test(x.lang))
+    .sort((a,b)=>quality(b)-quality(a) || a.name.localeCompare(b.name));
+  voice = voiceList.find(x=>x.voiceURI === G.voiceURI) || voiceList[0] || null;
+  if(voice) G.voiceURI = voice.voiceURI;
+  renderVoiceList();
+}
+function renderVoiceList(){
+  const sel = el('voicepick');
+  if(!sel || sel.dataset.n === String(voiceList.length)) return;
+  sel.dataset.n = String(voiceList.length);
+  sel.innerHTML = '';
+  voiceList.forEach(v=>{
+    const o = document.createElement('option');
+    o.value = v.voiceURI;
+    o.textContent = v.name + (quality(v) >= 60 ? ' — high quality' : '');
+    sel.appendChild(o);
+  });
+  if(voice) sel.value = voice.voiceURI;
+  if(!voiceList.length){
+    const o = document.createElement('option');
+    o.textContent = 'No voices found';
+    sel.appendChild(o);
+  }
+}
+if('speechSynthesis' in window){
+  pickVoice();
+  speechSynthesis.onvoiceschanged = pickVoice;
+  setTimeout(pickVoice, 400);
+}
+function say(text){
+  return new Promise(resolve=>{
+    if(!('speechSynthesis' in window)) return resolve();
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = G.rate; u.pitch = G.pitch; u.volume = 1;
+    if(voice) u.voice = voice;
+    let done = false;
+    const t0 = Date.now();
+    const fin = ()=>{
+      if(done) return; done = true; clearTimeout(guard);
+      if(Date.now() - t0 < 40) silentCount++; else silentCount = 0;
+      if(silentCount === 3) el('statusL').textContent = 'No voice — check Settings';
+      resolve();
+    };
+    const guard = setTimeout(fin, 1200 + text.length * 90);
+    u.onend = fin; u.onerror = fin;
+    speechSynthesis.speak(u);
+    speechSynthesis.resume();
+  });
+}
+/* iOS only honours speech that begins inside a tap, with no await first */
+function primeSpeech(){
+  try{
+    applyAudioSession();          // declare the category before any audio starts
+    if(!('speechSynthesis' in window)) return;
+    speechSynthesis.cancel();
+    pickVoice();
+    const u = new SpeechSynthesisUtterance('ready');
+    u.volume = 0.02; u.rate = 1.6;
+    if(voice) u.voice = voice;
+    speechSynthesis.speak(u);
+    speechSynthesis.resume();
+    ensureAudio();
+  }catch(e){}
+}
+
+/* ══ cancellable waiting ═══════════════════════════════════════ */
+let waiters = [];
+function wait(ms){
+  return new Promise(resolve=>{
+    const o = {resolve};
+    o.t = setTimeout(()=>{ waiters = waiters.filter(x=>x!==o); resolve(); }, ms);
+    waiters.push(o);
+  });
+}
+function cancelWaits(){ waiters.forEach(o=>{ clearTimeout(o.t); o.resolve(); }); waiters = []; }
+
+/* ══ session ═══════════════════════════════════════════════════ */
+let running = false, round = 1, remain = 0, tick = null, wakeLock = null, live = null;
+
+/* Pause freezes every clock at once — the round, the reset countdown
+   and the session total. What gets logged is time worked, so a 30
+   minute workout interrupted for half an hour is still 30 minutes. */
+let paused = false, pauseStarted = 0, pausedTotal = 0, resumers = [];
+function gate(){ return paused ? new Promise(r=>resumers.push(r)) : Promise.resolve(); }
+function setPaused(on){
+  if(paused === on) return;
+  paused = on;
+  if(on){ pauseStarted = Date.now(); }
+  else {
+    pausedTotal += Date.now() - pauseStarted;
+    const w = resumers; resumers = []; w.forEach(f=>f());
+  }
+}
+const workedSecs = startMs => Math.max(0, Math.round((Date.now() - startMs - pausedTotal)/1000));
+function resetPause(){ paused = false; pausedTotal = 0; resumers = []; }
+const stage=()=>el('stage'), go=()=>el('go');
+
+function openSession(){
+  show('session');
+  el('phase').textContent = 'Ready';
+  el('clock').textContent = S.useRounds ? fmt(S.roundLen) : '∞';
+  el('statusL').textContent = ''; el('statusR').textContent = '';
+  stage().innerHTML = '';
+  primeSpeech();
+  start();
+}
+function start(){
+  running = true;
+  round = 1;
+  resetPause();
+  live = {start: Date.now(), rounds:0, combos:0, strikes:0};
+  go().textContent = 'Stop'; go().classList.add('stop');
+  const pb = el('pauseBtn'); pb.hidden = false; pb.textContent = 'Pause';
+  holdScreen();
+  loop();
+}
+function stop(){
+  running = false;
+  setPaused(false);
+  cancelWaits();
+  el('pauseBtn').hidden = true;
+  try{ speechSynthesis.cancel(); }catch(e){}
+  clearInterval(tick); tick = null;
+  setRope(0,0);
+  go().textContent = 'Start'; go().classList.remove('stop');
+  el('phase').textContent = 'Done';
+  el('statusL').textContent = ''; el('statusR').textContent = '';
+  el('clock').classList.remove('warn');
+  releaseScreen();
+  endSession();
+}
+async function loop(){
+  while(running){
+    if(S.useRounds){
+      el('phase').textContent = `Round ${round} of ${S.rounds}`;
+      startClock(S.roundLen);
+      bell(1);
+      await say(`Round ${round}`);
+    } else {
+      el('phase').textContent = 'Working';
+      el('clock').textContent = '∞';
+    }
+    while(running && (!S.useRounds || remain > 0)){ await gate(); if(!running) return; await callout(); }
+    if(!running) return;
+
+    stopClock();
+    bell(2);
+    live.rounds++;
+    if(round >= S.rounds){
+      await say('Session complete. Good work.');
+      stop(); return;
+    }
+    el('phase').textContent = 'Rest';
+    stage().innerHTML = '';
+    el('statusL').textContent = 'Next round in';
+    await say('Rest');
+    startClock(S.breakLen);
+    setRope(S.breakLen, 1);
+    while(running && remain > 0){ await gate(); await wait(200); }
+    if(!running) return;
+    stopClock(); setRope(0,0);
+    el('statusL').textContent = '';
+    round++;
+  }
+}
+async function callout(){
+  const combo = buildCombo();
+  if(!combo.length){ el('statusL').textContent = 'Turn on a technique group'; await wait(800); return; }
+  render(combo);
+  live.combos++; live.strikes += combo.length;
+  el('statusL').textContent = 'Throw it';
+  el('statusR').textContent = '';
+  const L = sides();
+  for(let i=0;i<combo.length;i++){
+    await gate();
+    if(!running) return;
+    highlight(i);
+    await say(spoken(combo[i], L));
+    if(!running) return;
+    if(i < combo.length-1 && S.gap > 0) await wait(S.gap*1000);
+  }
+  if(!running) return;
+  highlight(-1);
+  el('statusL').textContent = 'Reset';
+  /* driven by the loop rather than a CSS transition, so it freezes too */
+  const total = S.rest*1000;
+  let left = total;
+  while(running && left > 0){
+    await wait(100);
+    if(paused) continue;
+    left -= 100;
+    el('statusR').textContent = (Math.max(0,left)/1000).toFixed(1);
+    setRopeAt(left/total);
+  }
+  el('statusR').textContent = '';
+  setRopeAt(0);
+}
+function render(combo){
+  const L = sides();
+  stage().innerHTML = combo.map(t=>
+    `<div class="strike${t.g==='defense'?' def':''}">
+       <span class="n">${t.num || '·'}</span><span class="t">${esc(t.label(L))}</span>
+     </div>`).join('');
+}
+function highlight(i){
+  stage().querySelectorAll('.strike').forEach((n,j)=>n.classList.toggle('on', j===i));
+}
+function setRopeAt(frac){
+  const rope = el('rope');
+  rope.style.transition = 'none';
+  rope.style.transform = `scaleX(${Math.max(0, Math.min(1, frac))})`;
+}
+function setRope(seconds, to){
+  const rope = el('rope');
+  rope.style.transition = 'none';
+  rope.style.transform = `scaleX(${to ? 1 : 0})`;
+  void rope.offsetWidth;
+  if(to && seconds > 0){
+    rope.style.transition = `transform ${seconds}s linear`;
+    rope.style.transform = 'scaleX(0)';
+  }
+}
+function startClock(sec){
+  remain = sec;
+  el('clock').textContent = fmt(remain);
+  el('clock').classList.remove('warn');
+  clearInterval(tick);
+  tick = setInterval(()=>{
+    if(paused) return;
+    remain--;
+    el('clock').textContent = fmt(Math.max(0,remain));
+    el('clock').classList.toggle('warn', remain <= 10);
+    if(remain <= 0) clearInterval(tick);
+  }, 1000);
+}
+function stopClock(){ clearInterval(tick); tick = null; el('clock').classList.remove('warn'); }
+
+function endSession(){
+  if(!live) return;
+  const s = live; live = null;
+  const type = cur ? cur.type : 'muaythai';
+  commitSession(makeSession(cur, {
+    start: s.start,
+    dur: workedSecs(s.start),
+    source: 'app',
+    detail: type === 'meditate'
+      ? {completed: s.completed === true}
+      : {rounds: s.rounds, combos: s.combos, strikes: s.strikes}
+  }));
+}
+
+go().addEventListener('click', ()=>{
+  if(running) return stop();
+  primeSpeech();
+  start();
+});
+el('pauseBtn').addEventListener('click', ()=>{
+  if(!running) return;
+  const to = !paused;
+  setPaused(to);
+  el('pauseBtn').textContent = to ? 'Resume' : 'Pause';
+  el('phase').textContent = to ? 'Paused' : (S.useRounds ? `Round ${round} of ${S.rounds}` : 'Working');
+  if(to){ try{ speechSynthesis.cancel(); }catch(e){} }
+});
+el('quit').addEventListener('click', ()=>{
+  if(running) stop();
+  cur ? openExercise(cur.id) : show('home');
+});
+document.addEventListener('visibilitychange', async ()=>{
+  if(document.visibilityState === 'visible' && running && navigator.wakeLock && !wakeLock){
+    try{ wakeLock = await navigator.wakeLock.request('screen'); }catch(e){}
+  }
+});
+
+/* ══ stats ═════════════════════════════════════════════════════ */
+let statView = 'week', statOffset = 0;
+
+function totalsBlock(list){
+  const body = list.filter(s=>s.category === 'physical');
+  const mind = list.filter(s=>s.category === 'mental');
+  return `<div class="totals">
+    <div class="tot"><b>${list.length}</b><span>Sessions</span></div>
+    <div class="tot"><b>${hhmm(body.reduce((n,s)=>n+s.dur,0))}</b><span>Body</span></div>
+    <div class="tot"><b>${hhmm(mind.reduce((n,s)=>n+s.dur,0))}</b><span>Mind</span></div>
+  </div>`;
+}
+const EFFORTS = {easy:'Easy', moderate:'Moderate', hard:'Hard'};
+/* What body and mind time was actually made of. The two-colour bars
+   stay two colours — this answers the other question without turning
+   a 7px bar into a rainbow. Only types with sessions appear. */
+function typeBreakdown(list){
+  const by = {};
+  list.forEach(s=>{ by[s.type] = (by[s.type] || 0) + s.dur; });
+  const rows = Object.keys(by).map(k=>({sec:by[k], t:typeOf(k)}))
+                     .sort((a,b)=>b.sec - a.sec);
+  if(rows.length < 2) return '';
+  const peak = rows[0].sec;
+  return `<div class="brk">` + rows.map(r=>`
+    <div class="brkrow">
+      <span class="dot" style="background:${r.t.accent}"></span>
+      <span class="nm">${esc(r.t.name)}</span>
+      <span class="tr"><i style="width:${Math.max(3,(r.sec/peak)*100)}%;background:${r.t.accent}"></i></span>
+      <span class="amt">${hhmm(r.sec)}</span>
+    </div>`).join('') + `</div>`;
+}
+function sessionLine(s){
+  if(s.source === 'manual'){
+    const bits = [];
+    if(s.effort) bits.push(EFFORTS[s.effort] + ' effort');
+    if(s.note) bits.push(s.note);
+    return bits.join(' · ');
+  }
+  const t = typeOf(s.type);
+  try{ return t.line ? t.line(s) : ''; }catch(e){ return ''; }
+}
+function sessionRows(list){
+  if(!list.length) return `<p class="empty">Nothing here yet. Finish a workout and it lands in this log automatically.</p>`;
+  return list.slice().sort((a,b)=>b.start-a.start).map(s=>`
+    <button class="sess" data-sid="${s.start}">
+      <div class="when">${esc(s.name || s.routine || 'Session')}${s.source === 'manual' ? '<span class="tag">Logged</span>' : ''}
+        <small>${esc(typeOf(s.type).name)} · ${new Date(s.start).toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'})} · ${timeOf(s.start)}</small>
+        ${sessionLine(s) ? `<small class="detail">${esc(sessionLine(s))}</small>` : ''}
+      </div>
+      <div class="dur">${hhmm(s.dur)}</div>
+    </button>`).join('');
+}
+const navRow = label => `<div class="navrow">
+  <button id="statBack" aria-label="Earlier">‹</button>
+  <span>${esc(label)}</span>
+  <button id="statFwd" aria-label="Later">›</button>
+</div>`;
+
+function renderStats(){
+  const body = el('statBody'); if(!body) return;
+  const now = new Date();
+
+  if(statView === 'day'){
+    const d = addDays(dayStart(now), statOffset);
+    const list = sessions.filter(s=>inRange(s, d, addDays(d, 1)));
+    body.innerHTML = navRow(statOffset === 0 ? 'Today'
+      : d.toLocaleDateString([], {weekday:'long', month:'short', day:'numeric'}))
+      + totalsBlock(list) + typeBreakdown(list) + sessionRows(list);
+  }
+  else if(statView === 'week'){
+    const a = weekStart(now); a.setDate(a.getDate() + statOffset*7);
+    const b = addDays(a, 7);
+    const list = sessions.filter(s=>inRange(s,a,b));
+    const perDay = [...Array(7)].map((_,i)=>{
+      const d0 = addDays(a, i), d1 = addDays(d0, 1);
+      const day = sessions.filter(s=>inRange(s, d0, d1));
+      return {ph: mins(day.filter(s=>s.category==='physical')), mt: mins(day.filter(s=>s.category==='mental'))};
+    });
+    const peak = Math.max(20, ...perDay.map(d=>d.ph+d.mt));
+    const bars = perDay.map(d=>{
+      const tot = d.ph + d.mt;
+      return `<div><b>${tot||''}</b>`
+        + (d.mt ? `<i class="mt" style="height:${Math.max(3,(d.mt/peak)*100)}%"></i>` : '')
+        + (d.ph ? `<i class="ph" style="height:${Math.max(3,(d.ph/peak)*100)}%"></i>` : '')
+        + (tot ? '' : `<i class="none" style="height:1%"></i>`) + `</div>`;
+    }).join('');
+    const label = statOffset === 0 ? 'This week' : statOffset === -1 ? 'Last week'
+      : `${a.toLocaleDateString([], {month:'short', day:'numeric'})} – ${addDays(b, -1).toLocaleDateString([], {month:'short', day:'numeric'})}`;
+    const ad = adherence(a, b);
+    body.innerHTML = navRow(label) + totalsBlock(list) + typeBreakdown(list)
+      + (ad.plan ? `<p class="adh">Planned sessions — <b>${ad.hit} of ${ad.plan}</b></p>` : '')
+      + `<div class="bars">${bars}</div>`
+      + `<div class="axis">${['M','T','W','T','F','S','S'].map(x=>`<span>${x}</span>`).join('')}</div>`
+      + `<div class="key"><span><i style="background:var(--physical)"></i>Body</span><span><i style="background:var(--mental)"></i>Mind</span><span>Minutes per day</span></div>`
+      + sessionRows(list);
+  }
+  else {
+    const a = monthStart(now); a.setMonth(a.getMonth() + statOffset);
+    const b = new Date(a.getFullYear(), a.getMonth()+1, 1);
+    const list = sessions.filter(s=>inRange(s,a,b));
+    const days = Math.round((b-a)/DAY);
+    const lead = (a.getDay()+6)%7;
+    const today = dayStart(new Date()).getTime();
+    let peak = 1;
+    const nowD = dayStart(new Date());
+    const perDay = [...Array(days)].map((_,i)=>{
+      const d0 = new Date(a.getFullYear(), a.getMonth(), i+1);
+      const day = sessions.filter(s=>inRange(s, d0, addDays(d0, 1)));
+      const ph = mins(day.filter(s=>s.category==='physical'));
+      const mt = mins(day.filter(s=>s.category==='mental'));
+      const m = ph + mt;
+      peak = Math.max(peak, m);
+      const missed = !m && d0 < nowD && plannedFor(d0).length > 0;
+      return {m, missed, colour: m ? (ph >= mt ? 'var(--physical)' : 'var(--mental)') : ''};
+    });
+    let cells = ['M','T','W','T','F','S','S'].map(x=>`<span class="hd">${x}</span>`).join('');
+    cells += '<i class="blank"></i>'.repeat(lead);
+    perDay.forEach((d,i)=>{
+      const d0 = new Date(a.getFullYear(), a.getMonth(), i+1).getTime();
+      const fill = d.m ? Math.round(22 + 78*(d.m/peak)) : 0;
+      cells += `<i class="${d.m?'hit':''}${d.missed?' plan':''}${d0===today?' today':''}" title="${d.m} min">`
+        + (d.m ? `<u style="height:${fill}%;background:${d.colour}"></u>` : '')
+        + `<span>${i+1}</span></i>`;
+    });
+    body.innerHTML = navRow(a.toLocaleDateString([], {month:'long', year:'numeric'}))
+      + totalsBlock(list) + typeBreakdown(list)
+      + `<div class="cal">${cells}</div>` + sessionRows(list);
+  }
+
+  const back = el('statBack'), fwd = el('statFwd');
+  if(back) back.onclick = ()=>{ statOffset--; renderStats(); };
+  if(fwd){
+    fwd.disabled = statOffset >= 0;
+    fwd.style.opacity = statOffset >= 0 ? .3 : 1;
+    fwd.onclick = ()=>{ if(statOffset < 0){ statOffset++; renderStats(); } };
+  }
+}
+el('statBody').addEventListener('click', e=>{
+  const b = e.target.closest('[data-sid]'); if(!b) return;
+  const s = sessions.find(x=>String(x.start) === b.dataset.sid);
+  if(s) openLog(null, s);
+});
+el('statTabs').addEventListener('click', e=>{
+  const b = e.target.closest('.chip'); if(!b) return;
+  setChips('statTabs', x=>x === b);
+  statView = b.dataset.v; statOffset = 0; renderStats();
+});
+el('exportics').addEventListener('click', ()=>{
+  if(!sessions.length) return;
+  const stamp = ms => new Date(ms).toISOString().replace(/[-:]/g,'').split('.')[0] + 'Z';
+  const body = sessions.map(s=>[
+    'BEGIN:VEVENT',
+    `UID:practice-${s.start}@practice`,
+    `DTSTAMP:${stamp(s.start)}`,
+    `DTSTART:${stamp(s.start)}`,
+    `DTEND:${stamp(s.end)}`,
+    `SUMMARY:${(s.name||s.routine||'Training').replace(/[,;\\]/g, ' ')} — ${hhmm(s.dur)}`,
+    `DESCRIPTION:${(typeOf(s.type).name + (sessionLine(s) ? ' — ' + sessionLine(s) : '')).replace(/[,;\\]/g,' ')}`,
+    'END:VEVENT'
+  ].join('\r\n')).join('\r\n');
+  const ics = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Practice//EN','CALSCALE:GREGORIAN', body, 'END:VCALENDAR'].join('\r\n');
+  const url = URL.createObjectURL(new Blob([ics], {type:'text/calendar'}));
+  const a = document.createElement('a');
+  a.href = url; a.download = 'practice-sessions.ics';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+});
+el('clearlog').addEventListener('click', e=>{
+  const btn = e.currentTarget;
+  if(!sessions.length) return;
+  if(btn.dataset.armed !== '1'){
+    btn.dataset.armed = '1'; btn.textContent = 'Tap again to erase everything';
+    setTimeout(()=>{ btn.dataset.armed='0'; btn.textContent='Clear all history'; }, 4000);
+    return;
+  }
+  sessions = []; saveSessions(); renderStats(); renderHome();
+  btn.dataset.armed = '0'; btn.textContent = 'Clear all history';
+});
+
+/* ══ manual logging and session editing ═══════════════════════
+   A logged session is the same record as one the app drove — it
+   just has no detail, so metrics built on detail must skip it
+   rather than count it as a zero. */
+let logKey = null, logFrom = 'home';
+const pad2 = n => String(n).padStart(2,'0');
+const dateVal = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+const timeVal = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+
+function openLog(exId, existing){
+  logKey = existing ? existing.start : null;
+  logFrom = existing ? 'stats' : (exId ? 'exercise' : 'home');
+  const pool = exercises.filter(e=>typeOf(e.type).ready);
+  /* A session outlives its exercise on purpose. Keep it selectable so
+     it can still be corrected or deleted, and never let it silently
+     re-attach itself to whatever happens to be first in the list. */
+  const orphan = existing && !pool.some(e=>e.id === existing.exerciseId);
+  if(!pool.length && !existing){
+    el('logBody').innerHTML = `<p class="empty">Create an exercise first — a logged session still has to attach to one.</p>`;
+    return show('log');
+  }
+  const mins = existing ? Math.max(1, Math.round(existing.dur/60)) : 60;
+  const when = existing ? new Date(existing.start) : new Date(Date.now() - mins*60000);
+  const chosen = existing ? existing.exerciseId : (exId || pool[0].id);
+  const isApp = existing && existing.source !== 'manual';
+
+  el('logBody').innerHTML = `
+    <h2 class="sec">Exercise</h2>
+    <select id="logEx" ${isApp || orphan ? 'disabled' : ''}>
+      ${orphan ? `<option value="${esc(existing.exerciseId || '')}" selected>${esc(existing.name || 'Session')} — deleted</option>` : ''}
+      ${pool.map(e=>`<option value="${e.id}"${e.id===chosen?' selected':''}>${esc(e.name)} — ${esc(typeOf(e.type).name)}</option>`).join('')}
+    </select>
+    ${orphan ? '<p class="note">The exercise this belongs to has been deleted. You can still fix the time or remove the entry.</p>' : ''}
+    ${isApp ? `<p class="note">This one was recorded by the app, so its exercise and its numbers stay as they are. You can still correct the time, effort and note.</p>` : ''}
+
+    <h2 class="sec">When</h2>
+    <div class="half">
+      <div><input type="date" id="logDate" value="${dateVal(when)}"></div>
+      <div><input type="time" id="logTime" value="${timeVal(when)}"></div>
+    </div>
+
+    <h2 class="sec">How long</h2>
+    <div class="chips" id="logQuick">
+      ${[15,30,45,60,90].map(v=>`<button class="chip" data-q="${v}">${v} min</button>`).join('')}
+    </div>
+    <div class="field" style="margin-top:12px"><label>Duration</label><span class="val" id="logDurv"></span></div>
+    <input type="range" id="logDur" min="5" max="240" step="5" value="${Math.min(240, Math.max(5, Math.round(mins/5)*5))}">
+
+    <h2 class="sec">Effort</h2>
+    <div class="chips" id="logEffort">
+      ${Object.keys(EFFORTS).map(k=>`<button class="chip" data-e="${k}">${EFFORTS[k]}</button>`).join('')}
+    </div>
+
+    <h2 class="sec">Note</h2>
+    <textarea id="logNote" placeholder="Partner drills, six minutes of rope, push-ups at the end" maxlength="240">${esc(existing && existing.note || '')}</textarea>
+
+    <button class="primary" id="logSave" style="margin-top:28px">${existing ? 'Save changes' : 'Log session'}</button>
+    ${existing ? '<button class="ghost danger" id="logDel">Delete session</button>' : ''}`;
+
+  let effort = existing && existing.effort || 'moderate';
+  const paintEffort = ()=>setChips('logEffort', b=>b.dataset.e === effort);
+  paintEffort();
+  el('logEffort').addEventListener('click', e=>{
+    const b = e.target.closest('.chip'); if(!b) return;
+    effort = b.dataset.e; paintEffort();
+  });
+
+  const dur = el('logDur'), durOut = el('logDurv');
+  const syncDur = ()=>{
+    durOut.textContent = fmt(+dur.value * 60);
+    setChips('logQuick', b=>+b.dataset.q === +dur.value);
+  };
+  dur.addEventListener('input', syncDur); syncDur();
+  el('logQuick').addEventListener('click', e=>{
+    const b = e.target.closest('.chip'); if(!b) return;
+    dur.value = b.dataset.q; syncDur();
+  });
+
+  el('logSave').addEventListener('click', ()=>{
+    const [y,mo,d] = el('logDate').value.split('-').map(Number);
+    const [hh,mm] = el('logTime').value.split(':').map(Number);
+    if(!y || isNaN(hh)) return;
+    const start = new Date(y, mo-1, d, hh, mm).getTime();
+    const minutes = +dur.value;
+    const ex = exercises.find(x=>x.id === el('logEx').value) || (existing ? null : pool[0]);
+    const note = el('logNote').value.trim();
+
+    if(existing){
+      /* Only the timing and the notes are editable here; the exercise
+         it belongs to is never reassigned behind your back. */
+      Object.assign(existing, {
+        start, end: start + minutes*60000, dur: minutes*60, effort, note
+      });
+      if(existing.source !== 'app' && existing.source !== 'manual') existing.source = 'app';
+    } else {
+      if(!ex) return;
+      commitSession(makeSession(ex, {
+        start, dur: minutes*60, source:'manual', effort, note
+      }));
+    }
+    saveSessions(); renderStats(); renderHome();
+    logKey = null;
+    logFrom === 'exercise' && cur ? openExercise(cur.id) : show('stats');
+  });
+
+  const del = el('logDel');
+  if(del) del.addEventListener('click', ()=>{
+    if(del.dataset.armed !== '1'){
+      del.dataset.armed = '1'; del.textContent = 'Tap again to delete';
+      setTimeout(()=>{ del.dataset.armed = '0'; del.textContent = 'Delete session'; }, 4000);
+      return;
+    }
+    sessions = sessions.filter(x=>x !== existing);
+    saveSessions(); renderStats(); renderHome();
+    show('stats');
+  });
+
+  show('log');
+}
+
+/* ══ app settings ══════════════════════════════════════════════ */
+function gslider(id, key, format){
+  const input = el(id), out = el(id+'v');
+  input.value = G[key];
+  const sync = ()=>{ G[key] = parseFloat(input.value); out.textContent = format(G[key]); };
+  input.addEventListener('input', ()=>{ sync(); saveGlobal(); });
+  sync();
+}
+gslider('rate','rate', v=>v.toFixed(2).replace(/0$/,'')+'×');
+gslider('pitch','pitch', v=>v.toFixed(2));
+(function(){
+  const probe = 'practice.probe';
+  try{ localStorage.setItem(probe,'1'); localStorage.removeItem(probe); }
+  catch(e){ storageBroken = true; }
+  const w = el('storageWarn');
+  if(w && storageBroken){
+    w.hidden = false;
+    w.textContent = 'This browser is refusing to save data — private browsing, or storage is full. Nothing you log will survive a reload.';
+  }
+})();
+setChips('audioMode', b=>b.dataset.a === G.audioMode);
+function paintAudioNote(){
+  const n = el('audioNote'); if(!n) return;
+  if(!audioSessionSupported()){
+    n.textContent = 'This browser will not let a web page set its audio category, so the ringer switch still decides. Flip it to ring for callouts and bells.';
+    return;
+  }
+  n.textContent = G.audioMode === 'playback'
+    ? 'Callouts and bells play even with the ringer switch on silent. Starting a session will pause music or a podcast.'
+    : 'Plays alongside your music, but goes quiet when the ringer switch is on silent.';
+}
+paintAudioNote();
+el('audioMode').addEventListener('click', e=>{
+  const b = e.target.closest('.chip'); if(!b) return;
+  setChips('audioMode', x=>x === b);
+  G.audioMode = b.dataset.a; saveGlobal();
+  applyAudioSession(); paintAudioNote();
+});
+el('doExport').addEventListener('click', ()=>{
+  const stamp = new Date().toISOString().slice(0,10);
+  const blob = new Blob([JSON.stringify(buildBackup(), null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `practice-backup-${stamp}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+});
+el('doImport').addEventListener('click', ()=>el('importFile').click());
+el('importFile').addEventListener('change', e=>{
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if(!file) return;
+  const panel = el('importPanel');
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    let found = null;
+    try{ found = inspectBackup(JSON.parse(reader.result)); }catch(err){ found = null; }
+    panel.hidden = false;
+    if(!found){
+      panel.innerHTML = `<p class="note">That does not look like a Practice backup.</p>`;
+      return;
+    }
+    const extraLine = Object.keys(found.extra)
+      .filter(k=>found.extra[k]).map(k=>`${found.extra[k]} ${k}`).join(', ');
+    const when = found.span
+      ? `${found.span[0].toLocaleDateString()} – ${found.span[1].toLocaleDateString()}`
+      : '—';
+    panel.innerHTML = `
+      <div class="balance" style="margin-top:14px">
+        <p class="eyebrow">Ready to import</p>
+        <p class="note" style="margin:6px 0 0">
+          ${found.newEx.length} new exercise${found.newEx.length===1?'':'s'} ·
+          ${found.newS.length} new session${found.newS.length===1?'':'s'}${extraLine ? ' · ' + esc(extraLine) : ''}<br>
+          ${found.newS.length ? 'Covering ' + esc(when) : 'Nothing new to add'}<br>
+          Backup made ${esc(new Date(found.data.exported || Date.now()).toLocaleDateString())} from v${esc(String(found.data.version || '?'))}
+        </p>
+      </div>
+      <div class="chips" id="impMode">
+        <button class="chip" data-im="data" aria-pressed="true">Data only</button>
+        <button class="chip" data-im="all" aria-pressed="false">Data and settings</button>
+      </div>
+      <button class="primary" id="impGo" style="margin-top:14px">Import</button>
+      <button class="ghost" id="impCancel">Cancel</button>`;
+    let withSettings = false;
+    el('impMode').addEventListener('click', ev=>{
+      const b = ev.target.closest('.chip'); if(!b) return;
+      setChips('impMode', x=>x === b);
+      withSettings = b.dataset.im === 'all';
+    });
+    el('impCancel').addEventListener('click', ()=>{ panel.hidden = true; panel.innerHTML = ''; });
+    el('impGo').addEventListener('click', ()=>{
+      applyBackup(found, withSettings);
+      panel.innerHTML = `<p class="note">Imported. ${found.newEx.length} exercises and ${found.newS.length} sessions added.</p>`;
+    });
+  };
+  reader.readAsText(file);
+});
+setChips('units', b=>b.dataset.u === G.units);
+el('units').addEventListener('click', e=>{
+  const b = e.target.closest('.chip'); if(!b) return;
+  setChips('units', x=>x === b);
+  G.units = b.dataset.u; saveGlobal();
+});
+setChips('callouts', b=>b.dataset.c === G.callouts);
+el('callouts').addEventListener('click', e=>{
+  const b = e.target.closest('.chip'); if(!b) return;
+  setChips('callouts', x=>x === b);
+  G.callouts = b.dataset.c; saveGlobal();
+});
+el('voicepick').addEventListener('change', e=>{
+  G.voiceURI = e.target.value;
+  voice = voiceList.find(v=>v.voiceURI === G.voiceURI) || voice;
+  saveGlobal();
+  try{
+    speechSynthesis.cancel();
+    const L = sides();
+    const demo = [BY_KEY.jab, BY_KEY.cross, BY_KEY.rearBody].map(t=>spoken(t,L)).join(', ');
+    const u = new SpeechSynthesisUtterance(demo);
+    u.rate = G.rate; u.pitch = G.pitch; if(voice) u.voice = voice;
+    speechSynthesis.speak(u); speechSynthesis.resume();
+  }catch(err){}
+});
+el('test').addEventListener('click', ()=>{
+  const note = el('testnote');
+  try{
+    speechSynthesis.cancel();
+    pickVoice();
+    const L = sides();
+    const u = new SpeechSynthesisUtterance([BY_KEY.jab, BY_KEY.cross, BY_KEY.rearBody].map(t=>spoken(t,L)).join(', '));
+    u.rate = G.rate; u.pitch = G.pitch; if(voice) u.voice = voice;
+    const t0 = Date.now();
+    u.onend = ()=>{ note.textContent = Date.now()-t0 < 300
+      ? 'Accepted but silent. Open this file directly in Safari — voice is often blocked in an embedded preview.'
+      : 'Voice is working.'; };
+    u.onerror = ()=>{ note.textContent = 'Voice was blocked here. Open the file directly in Safari.'; };
+    speechSynthesis.speak(u); speechSynthesis.resume();
+    note.textContent = 'Listening for output…';
+  }catch(e){ note.textContent = 'Speech is unavailable in this browser.'; }
+});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ╔══════════════════════════════════════════════════════════════╗
+   ║  STRENGTH MODULE — START                                     ║
+   ║  Fully self-contained: injects its own styles and screens,    ║
+   ║  registers itself on TYPES, and touches nothing in the shell. ║
+   ║  Deleting everything between the START and END banners        ║
+   ║  returns the app to v2.4 with no other edits.                 ║
+   ╚══════════════════════════════════════════════════════════════╝ */
+(function(){
+
+/* ── movement library ─────────────────────────────────────────
+   measure: 'weight' reps × load · 'level' reps at a rung ·
+   'time' seconds held. A ladder's final rung carries weight —
+   that is where bodyweight progression hands over to load. */
+const SEED = [
+  // push
+  ['bench',      'Barbell Bench Press',   'push', 'weight'],
+  ['inc-bench',  'Incline Bench Press',   'push', 'weight'],
+  ['db-bench',   'Dumbbell Bench Press',  'push', 'weight'],
+  ['inc-db',     'Incline Dumbbell Press','push', 'weight'],
+  ['ohp',        'Overhead Press',        'push', 'weight'],
+  ['db-ohp',     'Dumbbell Shoulder Press','push','weight'],
+  ['arnold',     'Arnold Press',          'push', 'weight'],
+  ['lat-raise',  'Lateral Raise',         'push', 'weight'],
+  ['front-raise','Front Raise',           'push', 'weight'],
+  ['cable-fly',  'Cable Fly',             'push', 'weight'],
+  ['db-fly',     'Dumbbell Fly',          'push', 'weight'],
+  ['pushdown',   'Triceps Pushdown',      'push', 'weight'],
+  ['oh-tri',     'Overhead Triceps Extension','push','weight'],
+  ['skull',      'Skull Crusher',         'push', 'weight'],
+  ['cg-bench',   'Close Grip Bench',      'push', 'weight'],
+  ['pushup',     'Push-up',               'push', 'level', ['Knee','Incline','Standard','Feet elevated','Weighted']],
+  ['dip',        'Dip',                   'push', 'level', ['Bench','Band assisted','Standard','Weighted']],
+  ['pike',       'Pike Push-up',          'push', 'level', ['Knee','Standard','Feet elevated','Handstand']],
+  // pull
+  ['pullup',     'Pull-up',               'pull', 'level', ['Band assisted','Negative','Standard','Weighted']],
+  ['chinup',     'Chin-up',               'pull', 'level', ['Band assisted','Negative','Standard','Weighted']],
+  ['inv-row',    'Inverted Row',          'pull', 'level', ['High bar','Standard','Feet elevated','Weighted']],
+  ['pulldown',   'Lat Pulldown',          'pull', 'weight'],
+  ['bb-row',     'Barbell Row',           'pull', 'weight'],
+  ['db-row',     'Dumbbell Row',          'pull', 'weight'],
+  ['cable-row',  'Seated Cable Row',      'pull', 'weight'],
+  ['face-pull',  'Face Pull',             'pull', 'weight'],
+  ['rev-fly',    'Reverse Fly',           'pull', 'weight'],
+  ['bb-curl',    'Barbell Curl',          'pull', 'weight'],
+  ['db-curl',    'Dumbbell Curl',         'pull', 'weight'],
+  ['hammer',     'Hammer Curl',           'pull', 'weight'],
+  ['preacher',   'Preacher Curl',         'pull', 'weight'],
+  ['shrug',      'Shrug',                 'pull', 'weight'],
+  // legs
+  ['squat',      'Barbell Back Squat',    'legs', 'weight'],
+  ['front-squat','Front Squat',           'legs', 'weight'],
+  ['goblet',     'Goblet Squat',          'legs', 'weight'],
+  ['bw-squat',   'Bodyweight Squat',      'legs', 'level', ['Assisted','Standard','Split','Pistol','Weighted']],
+  ['rdl',        'Romanian Deadlift',     'legs', 'weight'],
+  ['deadlift',   'Deadlift',              'legs', 'weight'],
+  ['leg-press',  'Leg Press',             'legs', 'weight'],
+  ['leg-ext',    'Leg Extension',         'legs', 'weight'],
+  ['leg-curl',   'Leg Curl',              'legs', 'weight'],
+  ['lunge',      'Walking Lunge',         'legs', 'weight'],
+  ['bulgarian',  'Bulgarian Split Squat', 'legs', 'weight'],
+  ['step-up',    'Step-up',               'legs', 'weight'],
+  ['calf',       'Calf Raise',            'legs', 'weight'],
+  ['hip-thrust', 'Hip Thrust',            'legs', 'weight'],
+  ['glute-br',   'Glute Bridge',          'legs', 'level', ['Two leg','Single leg','Weighted']],
+  ['nordic',     'Nordic Curl',           'legs', 'level', ['Band assisted','Negative','Standard']],
+  // core
+  ['plank',      'Plank',                 'core', 'time',  ['Knee','Standard','Feet elevated','Weighted']],
+  ['side-plank', 'Side Plank',            'core', 'time'],
+  ['hollow',     'Hollow Hold',           'core', 'time'],
+  ['hlr',        'Hanging Leg Raise',     'core', 'level', ['Knee raise','Straight leg','Toes to bar','Weighted']],
+  ['crunch',     'Crunch',                'core', 'level', ['Standard','Weighted']],
+  ['cable-crunch','Cable Crunch',         'core', 'weight'],
+  ['russian',    'Russian Twist',         'core', 'weight'],
+  ['ab-wheel',   'Ab Wheel',              'core', 'level', ['Knee','Standard']],
+  ['dead-bug',   'Dead Bug',              'core', 'level', ['Standard','Weighted']],
+  ['carry',      'Farmer Carry',          'core', 'time'],
+];
+const GROUPS = [['push','Push'],['pull','Pull'],['legs','Legs'],['core','Core']];
+const K_MOVE = 'practice.movements.v1';
+
+let MOVES = readList(K_MOVE, null);
+if(MOVES === null){
+  MOVES = SEED.map(([id,name,group,measure,ladder])=>({id,name,group,measure,ladder:ladder||null}));
+  write(K_MOVE, MOVES);
+}
+const saveMoves = ()=>write(K_MOVE, MOVES);
+const moveOf = id => MOVES.find(m=>m.id === id) || {id, name:'Unknown', group:'push', measure:'weight', ladder:null};
+const isWeighted = lvl => /weighted/i.test(lvl || '');
+/* Loads are stored in pounds and converted only for display, so
+   changing units never reinterprets a number already on record. */
+const LB_KG = 2.20462;
+const toLb   = v => { const n = parseFloat(v); if(isNaN(n) || n < 0) return 0;   // a negative load is a typo, not a lift
+                     return Math.min(5000, G.units === 'kg' ? Math.round(n*LB_KG*100)/100 : n); };
+const fromLb = v => { const n = parseFloat(v); if(isNaN(n) || n === 0) return ''; 
+                      return String(G.units === 'kg' ? Math.round((n/LB_KG)*2)/2 : Math.round(n*10)/10); };
+const unitName = ()=> G.units === 'kg' ? 'Kg' : 'Lbs';
+
+/* ── type registration ────────────────────────────────────── */
+const T = TYPES.strength;
+T.ready = true;
+T.blurb = 'Sets, reps, push pull legs';
+T.defaults = ()=>({rest:90, items:[]});
+T.summary = c=>{
+  if(!c.items || !c.items.length) return 'No movements yet';
+  const sets = c.items.reduce((n,i)=>n+i.sets, 0);
+  return `${c.items.length} movement${c.items.length===1?'':'s'} · ${sets} sets · ${c.rest}s rest`;
+};
+T.facts = (c,done)=>{
+  const sets = (c.items||[]).reduce((n,i)=>n+i.sets, 0);
+  const groups = [...new Set((c.items||[]).map(i=>moveOf(i.movementId).group))];
+  return [
+    [(c.items||[]).length, 'Movements'],
+    [sets, 'Working sets'],
+    [groups.map(g=>(GROUPS.find(x=>x[0]===g)||['','—'])[1]).join(' ') || '—', 'Focus'],
+    [done, 'Times done'],
+  ];
+};
+
+/* ── styles ───────────────────────────────────────────────── */
+const css = document.createElement('style');
+css.textContent = `
+  .liftCard{border-top:1px solid var(--line);padding:20px 0 6px;}
+  .liftCard:first-child{border-top:none;}
+  .liftHead{display:flex;align-items:baseline;gap:10px;margin-bottom:4px;}
+  .liftHead .nm{font-family:var(--display);font-weight:700;text-transform:uppercase;font-size:19px;line-height:1.1;flex:1;}
+  .liftHead .grp{font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;font-size:10px;color:var(--muted);}
+  .restPill{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:20px;padding:6px 13px;font-family:var(--mono);font-size:12px;color:var(--accent);margin:8px 0 14px;}
+  .setGrid{display:grid;grid-template-columns:22px 1fr 56px 72px 30px;gap:7px 6px;align-items:center;}
+  .setGrid .hd{font-family:var(--display);text-transform:uppercase;letter-spacing:.1em;font-size:10px;color:var(--muted);padding-bottom:3px;}
+  .setGrid .sn{font-family:var(--mono);font-size:13px;color:var(--muted);}
+  .setGrid .pv{font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .setGrid .pv.borrow{opacity:.5;font-style:italic;}
+  .setGrid input,.setGrid select{
+    width:100%;padding:10px 4px;text-align:center;background:var(--surface);
+    color:var(--bone);border:1px solid var(--line);border-radius:2px;
+    font-family:var(--mono);font-size:16px;-webkit-appearance:none;appearance:none;
+  }
+  /* The level menu holds long words, so it shrinks by scaling rather
+     than by font-size — anything under 16px makes iOS zoom on focus. */
+  .setGrid select{
+    font-family:var(--body);font-size:16px;padding:10px 2px;
+    transform:scale(.8);transform-origin:center;width:125%;margin-left:-12.5%;
+  }
+  .setGrid input:disabled{opacity:.25;}
+  .setGrid .ck{
+    width:32px;height:38px;border:1px solid var(--line);border-radius:2px;
+    display:grid;place-items:center;color:var(--muted);font-size:15px;
+  }
+  .setGrid .ck[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--ink);}
+  .liftRow.done .sn,.liftRow.done .pv{opacity:.4;}
+  .addset{margin:12px 0 4px;font-family:var(--display);text-transform:uppercase;letter-spacing:.12em;font-size:11px;color:var(--muted);}
+  .restBar{
+    position:fixed;left:0;right:0;bottom:0;z-index:8;
+    background:var(--canvas-deep);border-top:1px solid var(--accent);
+    padding:12px 18px calc(12px + env(safe-area-inset-bottom));
+    display:none;align-items:center;gap:14px;
+  }
+  .restBar.on{display:flex;}
+  .restBar .t{font-family:var(--mono);font-size:26px;color:var(--accent);font-variant-numeric:tabular-nums;}
+  .restBar .n{flex:1;font-size:13px;color:var(--muted);}
+  .restBar button{font-family:var(--display);text-transform:uppercase;letter-spacing:.12em;font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:2px;padding:9px 13px;}
+  .pickSearch{margin-bottom:16px;}
+  .liftEmpty{color:var(--muted);font-size:14px;line-height:1.5;padding:20px 0;}
+  .stepper{display:flex;align-items:center;gap:10px;}
+  .stepper button{width:34px;height:34px;border:1px solid var(--line);border-radius:2px;text-align:center;color:var(--muted);font-size:16px;}
+  .stepper b{font-family:var(--mono);font-size:15px;min-width:2.2em;text-align:center;font-weight:400;}
+  .ordbtn{width:32px;height:32px;border:1px solid var(--line);border-radius:2px;color:var(--muted);text-align:center;font-size:13px;}
+`;
+css.textContent += `
+  .whenRow{display:flex;gap:10px;margin-bottom:6px;}
+  .whenRow input{flex:1;}
+  .restPill{gap:0;padding:0;overflow:hidden;}
+  .restPill button{
+    padding:6px 12px;color:var(--muted);font-size:15px;line-height:1;text-align:center;
+  }
+  .restPill button:active{background:var(--surface);}
+  .restPill b{
+    padding:6px 4px;font-weight:400;font-size:12px;color:var(--bone);
+    font-family:var(--mono);min-width:56px;text-align:center;
+  }
+  .nmForm{
+    border:1px solid var(--line);border-radius:2px;padding:16px;margin-top:22px;
+  }
+  .nmForm input[type=text]{margin-bottom:4px;}
+  .nmLab{
+    font-family:var(--display);text-transform:uppercase;letter-spacing:.16em;
+    font-size:11px;color:var(--muted);margin:16px 0 8px;
+  }
+  .nmNote{color:var(--muted);font-size:12px;line-height:1.5;margin:8px 0 0;}
+`;
+document.head.appendChild(css);
+
+/* ── screens ──────────────────────────────────────────────── */
+const mk = (id, cls) => {
+  const s = document.createElement('section');
+  s.className = 'screen' + (cls ? ' '+cls : '');
+  s.id = 's-' + id;
+  s.innerHTML = `<div class="scroll" id="${id}Body"></div>`;
+  document.querySelector('main').appendChild(s);
+  return s;
+};
+mk('lift', 'sessionScreen');
+mk('pick');
+/* the movement library travels with a backup */
+EXPORTERS.movements = {
+  get: ()=>MOVES,
+  count: list => Array.isArray(list)
+    ? list.filter(m=>m && m.id && !MOVES.some(x=>x.id === m.id)).length : 0,
+  merge: list => {
+    if(!Array.isArray(list)) return 0;
+    let n = 0;
+    list.forEach(m=>{
+      if(m && m.id && m.name && !MOVES.some(x=>x.id === m.id)){ MOVES.push(m); n++; }
+    });
+    if(n) saveMoves();
+    return n;
+  }
+};
+
+BACKTO.pick = 'editor';   // the picker returns to the editor, draft intact
+TITLES.lift = 'Workout';
+TITLES.pick = 'Add movement';
+
+const bar = document.createElement('div');
+bar.className = 'restBar';
+bar.innerHTML = `<span class="t" id="restT">0:00</span><span class="n" id="restN"></span>
+  <button id="restAdd">+30s</button><button id="restSkip">Skip</button>`;
+document.body.appendChild(bar);
+
+/* ── history lookup ───────────────────────────────────────── */
+function priorSets(exerciseId, movementId){
+  const has = s => s.type === 'strength' && s.detail && s.detail.items
+                   && s.detail.items.some(i=>i.movementId === movementId);
+  const mine = sessions.filter(s=>has(s) && s.exerciseId === exerciseId).sort((a,b)=>b.start-a.start)[0];
+  if(mine) return {sets: mine.detail.items.find(i=>i.movementId===movementId).sets, borrowed:false};
+  const any = sessions.filter(has).sort((a,b)=>b.start-a.start)[0];
+  if(any) return {sets: any.detail.items.find(i=>i.movementId===movementId).sets, borrowed:true};
+  return null;
+}
+function priorText(prior, idx, m){
+  if(!prior) return {text:'—', borrow:false};
+  const s = prior.sets[idx] || prior.sets[prior.sets.length-1];
+  if(!s) return {text:'—', borrow:false};
+  const fell = !prior.sets[idx];
+  let text;
+  if(m.measure === 'time') text = `${s.reps || 0}s${s.level ? ' '+s.level : ''}`;
+  else if(m.measure === 'level') text = `${s.reps||0} × ${s.level||'—'}${s.load?` +${fromLb(s.load)}`:''}`;
+  else text = `${s.reps||0} × ${fromLb(s.load)} ${unitName().toLowerCase()}`;
+  return {text, borrow: prior.borrowed || fell};
+}
+
+/* ── the workout editor ───────────────────────────────────── */
+T.editorHTML = c => `
+  <h2 class="sec">Default rest</h2>
+  <div class="field"><label>Between sets</label><span class="val" id="lrestv"></span></div>
+  <input type="range" id="lrest" min="15" max="300" step="15" value="${c.rest}">
+  <h2 class="sec">Movements</h2>
+  <p class="nmNote" id="mvHint" hidden></p>
+  <div id="liftItems"></div>
+  <button class="addbtn" id="addMove">+ Add movement</button>`;
+
+T.editorWire = (c, api) => {
+  api.bind('lrest','rest', v=>v+'s');
+  const paint = ()=>{
+    el('liftItems').innerHTML = c.items.length ? c.items.map((it,i)=>{
+      const m = moveOf(it.movementId);
+      return `<div class="row" style="align-items:flex-start">
+        <span class="grow">
+          <span class="name">${esc(m.name)}</span>
+          <span class="sub">${esc((GROUPS.find(g=>g[0]===m.group)||['','—'])[1])} · ${it.sets} sets${it.rest?` · ${it.rest}s rest`:''}</span>
+          <span class="stepper" style="margin-top:10px">
+            <button data-dec="${i}">−</button><b>${it.sets}</b><button data-inc="${i}">+</button>
+            <button class="ordbtn" data-up="${i}" ${i===0?'disabled style="opacity:.3"':''}>↑</button>
+            <button class="ordbtn" data-dn="${i}" ${i===c.items.length-1?'disabled style="opacity:.3"':''}>↓</button>
+            <button class="ordbtn" data-rm="${i}" style="color:var(--corner)">✕</button>
+          </span>
+        </span>
+      </div>`;
+    }).join('') : `<p class="liftEmpty">No movements yet. Add a few and they will appear here in order.</p>`;
+  };
+  paint();
+  el('liftItems').addEventListener('click', ev=>{
+    const b = ev.target.closest('button'); if(!b) return;
+    const d = b.dataset;
+    if(d.inc !== undefined) c.items[+d.inc].sets = Math.min(12, c.items[+d.inc].sets + 1);
+    if(d.dec !== undefined) c.items[+d.dec].sets = Math.max(1, c.items[+d.dec].sets - 1);
+    if(d.up  !== undefined){ const i=+d.up; [c.items[i-1],c.items[i]]=[c.items[i],c.items[i-1]]; }
+    if(d.dn  !== undefined){ const i=+d.dn; [c.items[i+1],c.items[i]]=[c.items[i],c.items[i+1]]; }
+    if(d.rm  !== undefined) c.items.splice(+d.rm, 1);
+    saveEx(); paint();
+  });
+  el('addMove').addEventListener('click', ()=>openPicker(c, paint));
+};
+
+/* ── movement picker ──────────────────────────────────────── */
+let pickCfg = null, pickBack = null, pickQuery = '';
+function openPicker(cfg, after){
+  pickCfg = cfg; pickBack = after; pickQuery = '';
+  renderPicker(); show('pick');
+}
+function renderPicker(){
+  const q = pickQuery.trim().toLowerCase();
+  const body = GROUPS.map(([g,label])=>{
+    const list = MOVES.filter(m=>m.group === g && (!q || m.name.toLowerCase().includes(q)));
+    if(!list.length) return '';
+    return `<h2 class="grp">${label}</h2>` + list.map(m=>`
+      <button class="row" data-m="${m.id}">
+        <span class="grow">
+          <span class="name" style="font-size:17px">${esc(m.name)}</span>
+          <span class="sub">${m.measure === 'time' ? 'Timed hold' : m.measure === 'level' ? 'Reps at a level · ' + m.ladder.length + ' rungs' : 'Reps × weight'}</span>
+        </span><span class="go">+</span>
+      </button>`).join('');
+  }).join('');
+  el('pickBody').innerHTML =
+    `<input type="text" class="pickSearch" id="pickQ" placeholder="Search movements" value="${esc(pickQuery)}" autocomplete="off">`
+    + (body || `<p class="liftEmpty">Nothing matches.</p>`)
+    + newMoveForm();
+  wireNewMove();
+  const q2 = el('pickQ');
+  q2.addEventListener('input', e=>{
+    pickQuery = e.target.value;
+    const pos = e.target.selectionStart;
+    renderPicker();
+    const n = el('pickQ'); n.focus(); n.setSelectionRange(pos,pos);
+  });
+}
+el('pickBody').addEventListener('click', e=>{
+  if(e.target.closest('#newMove')) return newMovement();
+  const b = e.target.closest('[data-m]'); if(!b || !pickCfg) return;
+  pickCfg.items.push({movementId:b.dataset.m, sets:3, rest:null});
+  saveEx();
+  if(pickBack) pickBack();
+  show('editor');
+});
+let newOpen = false;
+function newMovement(){ newOpen = true; renderPicker(); }
+function newMoveForm(){
+  if(!newOpen) return `<button class="addbtn" id="newMove">+ Create a new movement</button>`;
+  return `<div class="nmForm">
+    <h2 class="grp" style="margin-top:0">New movement</h2>
+    <input type="text" id="nmName" placeholder="Movement name" autocomplete="off">
+    <p class="nmLab">Group</p>
+    <div class="chips" id="nmGroup">${GROUPS.map(([g,l],i)=>
+      `<button class="chip" data-g="${g}" aria-pressed="${i===0}">${l}</button>`).join('')}</div>
+    <p class="nmLab">Measured by</p>
+    <div class="chips" id="nmMeasure">
+      <button class="chip" data-x="weight" aria-pressed="true">Reps × weight</button>
+      <button class="chip" data-x="level" aria-pressed="false">Reps at a level</button>
+      <button class="chip" data-x="time" aria-pressed="false">Timed hold</button>
+    </div>
+    <div id="nmLadderWrap" hidden>
+      <p class="nmLab">Levels, easiest first</p>
+      <input type="text" id="nmLadder" placeholder="Knee, Standard, Weighted" autocomplete="off">
+      <p class="nmNote">A rung containing the word "weighted" accepts added load.</p>
+    </div>
+    <button class="primary" id="nmSave" style="margin-top:16px">Create movement</button>
+    <button class="ghost" id="nmCancel">Cancel</button>
+  </div>`;
+}
+function wireNewMove(){
+  if(!newOpen) return;
+  const pick = (id, attr)=> el(id).addEventListener('click', e=>{
+    const b = e.target.closest('.chip'); if(!b) return;
+    [...el(id).children].forEach(x=>x.setAttribute('aria-pressed', String(x===b)));
+    if(id === 'nmMeasure') el('nmLadderWrap').hidden = b.dataset.x !== 'level';
+  });
+  pick('nmGroup','g'); pick('nmMeasure','x');
+  el('nmCancel').addEventListener('click', ()=>{ newOpen = false; renderPicker(); });
+  el('nmSave').addEventListener('click', ()=>{
+    const name = el('nmName').value.trim();
+    if(!name){ el('nmName').focus(); return; }
+    const group = el('nmGroup').querySelector('[aria-pressed=true]').dataset.g;
+    const measure = el('nmMeasure').querySelector('[aria-pressed=true]').dataset.x;
+    let ladder = null;
+    if(measure === 'level'){
+      ladder = (el('nmLadder').value || 'Standard').split(',').map(x=>x.trim()).filter(Boolean);
+      if(!ladder.length) ladder = ['Standard'];
+    }
+    MOVES.push({id:'m'+Date.now(), name, group, measure, ladder});
+    saveMoves();
+    newOpen = false; pickQuery = '';
+    renderPicker();
+  });
+}
+
+/* ── the session ──────────────────────────────────────────── */
+let draft = null, liftStart = 0, restEnd = 0, restTimer = null, elapsedTimer = null;
+const K_DRAFT = 'practice.liftdraft.v1';
+
+/* how a strength session reads in Stats and in the calendar export */
+T.line = s => {
+  const d = s.detail || {};
+  const bits = [];
+  if(d.items) bits.push(`${d.items.length} movement${d.items.length===1?'':'s'}`);
+  if(d.sets) bits.push(`${d.sets} sets`);
+  if(d.volume) bits.push(`${Number(fromLb(d.volume)).toLocaleString()} ${unitName().toLowerCase()} moved`);
+  return bits.join(' · ');
+};
+
+/* Plans. Each one is a starting configuration for a single workout.
+   You pick the days yourself in the editor. */
+const W = (id, sets, rest) => ({movementId:id, sets, rest:rest||null});
+T.templates = [
+  {name:'Full body', blurb:'Everything in one session',
+   cfg:{rest:90, items:[W('squat',3),W('bench',3),W('bb-row',3),W('ohp',3),W('rdl',3),W('plank',3,60)]}},
+
+  {name:'Push day', blurb:'Chest, shoulders and triceps',
+   cfg:{rest:90, items:[W('bench',4),W('ohp',3),W('inc-db',3),W('lat-raise',3,60),W('pushdown',3,60),W('oh-tri',3,60)]}},
+
+  {name:'Pull day', blurb:'Back and biceps',
+   cfg:{rest:90, items:[W('pullup',4),W('bb-row',4),W('cable-row',3),W('face-pull',3,60),W('bb-curl',3,60),W('hammer',3,60)]}},
+
+  {name:'Leg day', blurb:'Quads, hamstrings, glutes and calves',
+   cfg:{rest:120, items:[W('squat',4),W('rdl',3),W('leg-press',3),W('leg-curl',3,60),W('calf',4,45),W('bulgarian',3)]}},
+
+  {name:'Upper body', blurb:'Pushing and pulling in the same session',
+   cfg:{rest:90, items:[W('bench',4),W('bb-row',4),W('ohp',3),W('pulldown',3),W('db-curl',3,60),W('pushdown',3,60)]}},
+
+  {name:'Dumbbells only', blurb:'Everything with a pair of dumbbells',
+   cfg:{rest:75, items:[W('db-bench',3),W('db-row',3),W('db-ohp',3),W('goblet',3),W('lunge',3),W('db-curl',3,60)]}},
+
+  {name:'Bodyweight', blurb:'No equipment, progression by level',
+   cfg:{rest:60, items:[W('pushup',3),W('pullup',3),W('bw-squat',3),W('dip',3),W('plank',3),W('hlr',3)]}},
+
+  {name:'Gym session', blurb:'Training you log by hand afterwards', logOnly:true, cfg:{}},
+];
+
+
+/* Sets and weights are things you actually did, so a past workout is
+   entered through the same table rather than a duration box. Combos
+   and rounds are generated by the app, which is why those types only
+   get duration and effort. */
+T.logPastLabel = 'Log a past workout';
+T.logPast = function(){ openLift(true); };
+T.open = function(){ openLift(false); };
+
+function openLift(backdate){
+  const c = cur.cfg;
+  if(!c.items || !c.items.length){
+    openEditor(cur, false);
+    const box = el('mvHint');
+    if(box){ box.textContent = 'Add at least one movement before starting.'; box.hidden = false; }
+    return;
+  }
+  const KEY = backdate ? K_PAST : K_DRAFT;
+  const saved = read(KEY, null);
+  let awayMs = 0;
+  if(saved && saved.exerciseId === cur.id && !!saved.backdate === !!backdate){
+    draft = saved; liftStart = saved.start;
+    awayMs = Math.max(0, Date.now() - (saved.touched || saved.start));
+  } else {
+    liftStart = backdate ? Date.now() - 60*60000 : Date.now();
+    draft = {
+      exerciseId: cur.id, start: liftStart, autofill:false,
+      backdate: !!backdate, mins: 60,
+      items: c.items.map(it=>{
+        const m = moveOf(it.movementId);
+        const prior = priorSets(cur.id, it.movementId);
+        return {
+          movementId: it.movementId, name: m.name,
+          rest: it.rest || c.rest,
+          sets: [...Array(it.sets)].map((_,i)=>{
+            const p = prior && (prior.sets[i] || prior.sets[prior.sets.length-1]);
+            return {reps:'', load:'', level: (p && p.level) || (m.ladder ? m.ladder[Math.min(m.ladder.length-1, Math.max(0, m.ladder.indexOf('Standard')))] || m.ladder[0] : null), done:false};
+          })
+        };
+      })
+    };
+    saveDraft();
+  }
+  renderLift(); show('lift');
+  if(!backdate){
+    resetPause();
+    pausedTotal = awayMs;    // time with the app closed is not time worked
+    startElapsed();
+  } else el('title').textContent = 'Past workout';
+}
+const K_PAST = 'practice.liftpast.v1';
+const saveDraft = ()=>{
+  if(draft) draft.touched = Date.now();   // so a resume knows how long you were away
+  write(draft && draft.backdate ? K_PAST : K_DRAFT, draft);
+};
+
+function renderLift(){
+  const cards = draft.items.map((it, ii)=>{
+    const m = moveOf(it.movementId);
+    const prior = priorSets(draft.exerciseId, it.movementId);
+    const loadHd = m.measure === 'time' ? '' : m.measure === 'level' ? 'Level' : unitName();
+    const repsHd = m.measure === 'time' ? 'Secs' : 'Reps';
+    const rows = it.sets.map((st, si)=>{
+      const p = priorText(prior, si, m);
+      let loadCell;
+      if(m.measure === 'level'){
+        loadCell = `<select data-lv="${ii}.${si}">${m.ladder.map(r=>
+          `<option value="${esc(r)}"${r===st.level?' selected':''}>${esc(r)}</option>`).join('')}</select>`;
+      } else if(m.measure === 'time'){
+        loadCell = `<span class="pv" style="text-align:center">—</span>`;
+      } else {
+        loadCell = `<input type="number" inputmode="decimal" data-ld="${ii}.${si}" value="${st.load}" placeholder="${draft.autofill && p.text!=='—' ? '' : ''}">`;
+      }
+      return `<span class="sn liftRow${st.done?' done':''}">${si+1}</span>
+        <span class="pv${p.borrow?' borrow':''}">${esc(p.text)}</span>
+        <input type="number" inputmode="numeric" data-rp="${ii}.${si}" value="${st.reps}">
+        ${loadCell}
+        <button class="ck" data-ck="${ii}.${si}" aria-pressed="${st.done}">${st.done?'✓':''}</button>`;
+    }).join('');
+    return `<div class="liftCard">
+      <div class="liftHead"><span class="nm">${esc(m.name)}</span>
+        <span class="grp">${esc((GROUPS.find(g=>g[0]===m.group)||['','—'])[1])}</span></div>
+      <span class="restPill"><button data-rest="${ii}" data-step="down" aria-label="Less rest">−</button><b>⏱ ${it.rest}s</b><button data-rest="${ii}" data-step="up" aria-label="More rest">+</button></span>
+      <div class="setGrid">
+        <span class="hd">Set</span><span class="hd">Previous</span>
+        <span class="hd">${repsHd}</span><span class="hd">${loadHd}</span><span class="hd"></span>
+        ${rows}
+      </div>
+      <button class="addset" data-add="${ii}">+ Add set</button>
+    </div>`;
+  }).join('');
+
+  const d = new Date(draft.start);
+  const p2 = n => String(n).padStart(2,'0');
+  const when = draft.backdate ? `
+    <h2 class="grp" style="margin-top:0">When</h2>
+    <div class="whenRow">
+      <input type="date" id="pastDate" value="${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}">
+      <input type="time" id="pastTime" value="${p2(d.getHours())}:${p2(d.getMinutes())}">
+    </div>
+    <div class="field"><label>How long</label><span class="val" id="pastLenV">${fmt((draft.mins||60)*60)}</span></div>
+    <input type="range" id="pastLen" min="5" max="240" step="5" value="${draft.mins||60}">` : '';
+
+  el('liftBody').innerHTML = `
+    ${when}
+    <div class="field" style="padding-bottom:16px">
+      <label>Auto-fill last numbers</label>
+      <button class="chip" id="autofill" aria-pressed="${draft.autofill}">${draft.autofill?'On':'Off'}</button>
+    </div>
+    ${cards}
+    <button class="primary" id="finishLift" style="margin-top:26px">${draft.backdate ? 'Save workout' : 'Finish workout'}</button>
+    ${draft.backdate ? '' : `<button class="ghost" id="pauseLift">${paused ? 'Resume' : 'Pause'}</button>`}
+    <button class="ghost danger" id="cancelLift">Discard</button>`;
+
+  if(!draft.backdate){
+    el('pauseLift').addEventListener('click', ()=>{
+      const to = !paused;
+      setPaused(to);
+      if(to) stopRest();
+      el('pauseLift').textContent = to ? 'Resume' : 'Pause';
+    });
+  }
+  if(draft.backdate){
+    const sync = ()=>{
+      const [y,mo,da] = el('pastDate').value.split('-').map(Number);
+      const [hh,mi] = el('pastTime').value.split(':').map(Number);
+      if(y && !isNaN(hh)) draft.start = new Date(y, mo-1, da, hh, mi).getTime();
+      draft.mins = +el('pastLen').value;
+      el('pastLenV').textContent = fmt(draft.mins*60);
+      liftStart = draft.start;
+      saveDraft();
+    };
+    ['pastDate','pastTime','pastLen'].forEach(id=>el(id).addEventListener('input', sync));
+  }
+}
+
+el('liftBody').addEventListener('input', e=>{
+  const t = e.target, d = t.dataset;
+  const key = d.rp || d.ld || d.lv; if(!key) return;
+  const [ii, si] = key.split('.').map(Number);
+  const st = draft.items[ii].sets[si];
+  if(d.rp) st.reps = t.value;
+  if(d.ld) st.load = t.value;
+  if(d.lv) st.level = t.value;
+  saveDraft();
+});
+el('liftBody').addEventListener('click', e=>{
+  const ck = e.target.closest('[data-ck]');
+  if(ck){
+    const [ii,si] = ck.dataset.ck.split('.').map(Number);
+    const st = draft.items[ii].sets[si];
+    st.done = !st.done;
+    saveDraft();
+    ck.setAttribute('aria-pressed', String(st.done));
+    ck.textContent = st.done ? '✓' : '';
+    const row = ck.parentElement.querySelectorAll('.setGrid > *');
+    if(st.done && !draft.backdate) startRest(draft.items[ii]); else stopRest();
+    renderLift();
+    return;
+  }
+  const rest = e.target.closest('[data-rest]');
+  if(rest){
+    const it = draft.items[+rest.dataset.rest];
+    const step = rest.dataset.step === 'down' ? -15 : 15;
+    it.rest = Math.min(300, Math.max(15, (it.rest || 90) + step));
+    saveDraft(); renderLift();
+    return;
+  }
+  const add = e.target.closest('[data-add]');
+  if(add){
+    const it = draft.items[+add.dataset.add];
+    const m = moveOf(it.movementId);
+    const last = it.sets[it.sets.length-1] || {};
+    it.sets.push({reps:'', load:'', level:last.level || (m.ladder?m.ladder[0]:null), done:false});
+    saveDraft(); renderLift();
+    return;
+  }
+  if(e.target.closest('#autofill')){
+    draft.autofill = !draft.autofill;
+    if(draft.autofill) applyAutofill();
+    saveDraft(); renderLift();
+    return;
+  }
+  if(e.target.closest('#finishLift')) return finishLift();
+  const cancel = e.target.closest('#cancelLift');
+  if(cancel){
+    if(cancel.dataset.armed !== '1'){
+      cancel.dataset.armed = '1'; cancel.textContent = 'Tap again to discard';
+      setTimeout(()=>{ cancel.dataset.armed='0'; cancel.textContent='Discard'; }, 4000);
+      return;
+    }
+    stopRest(); stopElapsed(); resetPause();
+    write(draft && draft.backdate ? K_PAST : K_DRAFT, null); draft = null;
+    openExercise(cur.id);
+  }
+});
+
+function applyAutofill(){
+  draft.items.forEach(it=>{
+    const m = moveOf(it.movementId);
+    const prior = priorSets(draft.exerciseId, it.movementId);
+    if(!prior) return;
+    it.sets.forEach((st,i)=>{
+      const p = prior.sets[i] || prior.sets[prior.sets.length-1];
+      if(!p || st.done) return;
+      if(st.reps === '') st.reps = p.reps || '';
+      if(m.measure !== 'level' && st.load === '') st.load = fromLb(p.load) || '';
+      if(m.measure === 'level' && p.level) st.level = p.level;
+    });
+  });
+}
+
+/* ── rest timer ───────────────────────────────────────────── */
+function startRest(item){
+  restEnd = Date.now() + item.rest*1000;
+  el('restN').textContent = 'Rest · ' + item.name;
+  bar.classList.add('on');
+  clearInterval(restTimer);
+  restTimer = setInterval(tickRest, 200);
+  tickRest();
+}
+function tickRest(){
+  if(paused){ restEnd += 200; return; }   // hold the countdown while paused
+  const left = Math.max(0, Math.round((restEnd - Date.now())/1000));
+  el('restT').textContent = fmt(left);
+  if(left <= 0){
+    clearInterval(restTimer); restTimer = null;
+    try{ ensureAudio(); bowl(actx.currentTime + 0.05, 0.7, null); }catch(e){}
+    el('restN').textContent = 'Go';
+    setTimeout(()=>{ if(!restTimer) bar.classList.remove('on'); }, 2500);
+  }
+}
+function stopRest(){
+  clearInterval(restTimer); restTimer = null;
+  bar.classList.remove('on');
+}
+el('restSkip').addEventListener('click', stopRest);
+el('restAdd').addEventListener('click', ()=>{ restEnd += 30000; tickRest(); });
+
+function startElapsed(){
+  clearInterval(elapsedTimer);
+  elapsedTimer = setInterval(()=>{
+    if(paused){ el('title').textContent = 'Paused'; return; }
+    if(screen !== 'lift') return;
+    el('title').textContent = fmt(workedSecs(liftStart));
+  }, 1000);
+}
+function stopElapsed(){ clearInterval(elapsedTimer); elapsedTimer = null; el('title').textContent = 'Workout'; }
+
+/* ── finishing ────────────────────────────────────────────── */
+/* Takes items whose loads are already canonical pounds. */
+function volumeOf(items){
+  let v = 0;
+  items.forEach(it=>{
+    const m = moveOf(it.movementId);
+    it.sets.forEach(s=>{
+      const reps = parseFloat(s.reps) || 0, load = parseFloat(s.load) || 0;
+      if(m.measure === 'weight') v += reps * load;
+      else if(m.measure === 'level' && isWeighted(s.level)) v += reps * load;
+    });
+  });
+  return Math.round(v);
+}
+function finishLift(){
+  const items = draft.items.map(it=>({
+    movementId: it.movementId, name: it.name,
+    sets: it.sets
+      .filter(s=>String(s.reps).trim() !== '')
+      .map(s=>({reps:parseFloat(s.reps)||0, load:toLb(s.load), level:s.level||null}))
+  })).filter(it=>it.sets.length);
+
+  if(!items.length){
+    /* Nothing was entered. Silently binning the draft would lose the
+       session, so say so and leave it exactly as it is. */
+    const btn = el('finishLift');
+    if(btn){
+      if(btn.dataset.armed !== '1'){
+        btn.dataset.armed = '1';
+        btn.textContent = 'No sets logged — tap again to end anyway';
+        setTimeout(()=>{ btn.dataset.armed = '0';
+          btn.textContent = draft && draft.backdate ? 'Save workout' : 'Finish workout'; }, 5000);
+        return;
+      }
+    }
+  }
+  setPaused(false);          // close any open pause before measuring
+  stopRest(); stopElapsed();
+  const back = draft.backdate;
+  const dur = back ? (draft.mins || 60)*60 : workedSecs(liftStart);
+  const start = back ? draft.start : liftStart;
+  const end = start + dur*1000;
+
+  if(items.length){
+    commitSession(makeSession(cur, {
+      start, end, dur,
+      source: back ? 'manual' : 'app',
+      detail:{ items, volume:volumeOf(items), unit:'lb',
+               sets:items.reduce((n,i)=>n+i.sets.length,0) }
+    }));
+  }
+  write(back ? K_PAST : K_DRAFT, null);
+  draft = null;
+  openExercise(cur.id);
+}
+
+})();
+/* ╔══════════════════════════════════════════════════════════════╗
+   ║  STRENGTH MODULE — END                                       ║
+   ╚══════════════════════════════════════════════════════════════╝ */
+
+resetAccent();
+renderHome();
+renderStats();
+show('home');
+</script>
+</body>
+</html>
