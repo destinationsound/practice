@@ -82,6 +82,7 @@
     bottom:6px;width:20px;height:3px;border-radius:2px;background:var(--brand);
   }
   body.session .nav,body.session .top{display:none;}
+  .screen.editing .sessbar{display:none;}
 
   /* balance */
   .balance{border:1px solid var(--line);border-radius:2px;padding:15px 16px 13px;margin-bottom:26px;}
@@ -574,7 +575,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '5.8';
+const APP_VERSION = '6.1';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -786,6 +787,64 @@ function boot(){
   if(patched || read(K_SESSIONS, null) === null) saveSessions();
 }
 
+/* ══ shared UI patterns ════════════════════════════════════════
+   Small things that were being rewritten in every module. Each was
+   duplicated at least twice before this existed. */
+
+/* Destructive actions arm on the first tap and fire on the second.
+   Six hand-rolled copies of this guarded deletes; one bug in any of
+   them cost data, so it lives here now. */
+function confirmTap(btn, armedLabel, restLabel, run){
+  if(!btn) return;
+  if(btn.dataset.armed === '1'){
+    btn.dataset.armed = '0';
+    clearTimeout(+btn.dataset.armTimer);
+    btn.textContent = restLabel;
+    return run();
+  }
+  btn.dataset.armed = '1';
+  btn.textContent = armedLabel;
+  btn.dataset.armTimer = setTimeout(()=>{
+    btn.dataset.armed = '0';
+    btn.textContent = restLabel;
+  }, 4000);
+}
+
+/* One vocabulary of date formats, so they cannot drift apart. */
+const dDay   = ms => new Date(ms).toLocaleDateString([], {month:'short', day:'numeric'});
+const dWeek  = ms => new Date(ms).toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'});
+const dLong  = ms => new Date(ms).toLocaleDateString([], {weekday:'long', month:'short', day:'numeric'});
+const dMonth = ms => new Date(ms).toLocaleDateString([], {month:'long', year:'numeric'});
+const dTime  = ms => new Date(ms).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+const dFull  = ms => dLong(ms) + ', ' + dTime(ms);
+
+/* A module adds a screen the same way every time. */
+function makeScreen(id, opts){
+  const o = opts || {};
+  const secEl = document.createElement('section');
+  secEl.className = 'screen' + (o.session ? ' sessionScreen' : '');
+  secEl.id = 's-' + id;
+  secEl.innerHTML = o.html || `<div class="scroll" id="${id}Body"></div>`;
+  document.querySelector('main').appendChild(secEl);
+  if(o.title) TITLES[id] = o.title;
+  return secEl;
+}
+
+/* One list row, used by every list in the app. */
+function rowHTML(o){
+  return `<button class="row${o.cls ? ' '+o.cls : ''}" ${o.attr || ''}>
+    <span class="tick"${o.accent ? ` style="background:${o.accent}"` : ''}></span>
+    <span class="grow">
+      <span class="name"${o.nameStyle ? ` style="${o.nameStyle}"` : ''}>${esc(o.name)}</span>
+      ${o.sub ? `<span class="sub">${o.sub}</span>` : ''}
+    </span>
+    ${o.mark !== undefined ? `<span class="mark">${o.mark}</span>` : ''}
+    ${o.go !== undefined ? `<span class="go">${esc(o.go)}</span>` : ''}
+  </button>`;
+}
+const tileHTML = (v, label, big) =>
+  `<div class="${big ? 'tot' : 'fact'}"><b${big ? '' : ' style="font-size:19px"'}>${v}</b><span>${esc(label)}</span></div>`;
+
 /* ══ helpers ═══════════════════════════════════════════════════ */
 const el = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -801,7 +860,6 @@ const monthStart = d => { const x=new Date(d); x.setDate(1); x.setHours(0,0,0,0)
 const inRange = (s,a,b) => s.start >= a.getTime() && s.start < b.getTime();
 const mins = list => Math.round(list.reduce((n,s)=>n+s.dur,0)/60);
 const hhmm = sec => { const h=Math.floor(sec/3600), m=Math.round((sec%3600)/60); return h?`${h}h ${m}m`:`${m}m`; };
-const timeOf = ms => new Date(ms).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
 
 boot();
 let S = TYPES.muaythai.defaults();
@@ -841,6 +899,22 @@ function schedLabel(ex){
 /* Every session record is built here so the three writers — a driven
    session, the strength table, and a hand entry — cannot drift apart.
    They have before: one of them once omitted category entirely. */
+/* ══ the session store ══════════════════════════════════════════
+   Reading and changing history goes through here. The broadcast
+   matters most: eight places used to write save-then-render-twice by
+   hand, and forgetting the last call left Today's checkmarks stale
+   with nothing to show it had gone wrong. */
+function sessionsChanged(){
+  saveSessions(); renderStats(); renderHome();
+}
+const sessionsIn  = (a, b) => sessions.filter(s=>inRange(s, a, b));
+const sessionsFor = id => sessions.filter(s=>s.exerciseId === id).sort((a,b)=>b.start - a.start);
+function removeSession(s){
+  sessions = sessions.filter(x=>x !== s);
+  sessionsChanged();
+}
+const backToExercise = ()=> cur ? openExercise(cur.id) : show('home');
+
 function makeSession(ex, f){
   const type = ex ? ex.type : 'muaythai';
   const rec = {
@@ -869,7 +943,7 @@ function commitSession(rec){
   const floor = typeOf(rec.type).kind === 'written' ? 0 : MIN_SESSION;
   if(!(rec.dur >= floor)){ lastDiscard = rec.dur|0; return null; }
   sessions.push(rec);
-  saveSessions(); renderStats(); renderHome();
+  sessionsChanged();
   return rec;
 }
 let lastDiscard = 0;
@@ -882,7 +956,7 @@ function releaseScreen(){
 }
 
 function lastDone(id){
-  const hits = sessions.filter(s=>s.exerciseId === id).sort((a,b)=>b.start-a.start);
+  const hits = sessionsFor(id);
   if(!hits.length) return 'Not done yet';
   const days = Math.floor((dayStart(new Date()) - dayStart(hits[0].start))/DAY);
   return days === 0 ? 'Done today' : days === 1 ? 'Yesterday' : `${days} days ago`;
@@ -968,7 +1042,10 @@ el('back').addEventListener('click', ()=>{
     if(logFrom === 'stats'){ renderStats(); return show('stats'); }
     resetAccent(); renderHome(); return show('home');
   }
-  if(BACKTO[screen]) return show(BACKTO[screen]);
+  if(BACKTO[screen]){
+    const to = BACKTO[screen];
+    return typeof to === 'function' ? to() : show(to);
+  }
   if(screen === 'editor') return leaveEditor();
   if(screen === 'preset'){ resetAccent(); renderTypes(); return show('newtype'); }
   if(screen === 'exercise' || screen === 'newtype'){ resetAccent(); renderHome(); return show('home'); }
@@ -985,7 +1062,7 @@ el('nav').addEventListener('click', e=>{
 /* ══ screen: home ══════════════════════════════════════════════ */
 function balanceBlock(){
   const a = weekStart(new Date()), b = addDays(a, 7);
-  const wk = sessions.filter(s=>inRange(s,a,b));
+  const wk = sessionsIn(a,b);
   const per = CATS.map(c=>({c, m: mins(wk.filter(s=>s.category === c.id))}));
   const peak = Math.max(1, ...per.map(p=>p.m));
   return `<div class="balance">
@@ -1015,14 +1092,12 @@ function todayBlock(){
   return `<h2 class="grp" style="margin-top:0">Today${left ? '' : ' · all done'}</h2>`
     + planned.map(e=>{
         const t = typeOf(e.type), done = didOn(e.id, now);
-        return `<button class="row today${done?' isdone':''}" data-e="${e.id}">
-          <span class="tick" style="background:${t.accent}"></span>
-          <span class="grow">
-            <span class="name">${esc(e.name)}</span>
-            <span class="sub">${esc(t.name)}${done ? ' · done' : ''}</span>
-          </span>
-          <span class="mark">${done ? '✓' : ''}</span>
-        </button>`;
+        return rowHTML({
+          cls: 'today' + (done?' isdone':''), attr: `data-e="${e.id}"`,
+          accent: t.accent, name: e.name,
+          sub: esc(t.name) + (done ? ' · done' : ''),
+          mark: done ? '✓' : ''
+        });
       }).join('');
 }
 function renderHome(){
@@ -1031,15 +1106,12 @@ function renderHome(){
     return `<h2 class="grp">${esc(c.name)}</h2>` + (list.length
       ? list.map(e=>{
           const t = typeOf(e.type), done = didOn(e.id, new Date());
-          return `<button class="row ${t.ready?'':'dim'}${done?' isdone':''}" data-e="${e.id}">
-            <span class="tick" style="background:${t.accent}"></span>
-            <span class="grow">
-              <span class="name">${esc(e.name)}</span>
-              <span class="sub">${esc(t.name)} · ${esc(summaryOf(e))}<br>${lastDone(e.id)}${schedLabel(e) ? ' · ' + esc(schedLabel(e)) : ''}</span>
-            </span>
-            ${done ? `<span class="donemark" style="color:${t.accent}">✓</span>` : ''}
-            <span class="go">${t.ready?'›':'Soon'}</span>
-          </button>`;
+          return rowHTML({
+            cls: (t.ready?'':'dim') + (done?' isdone':''),
+            attr: `data-e="${e.id}"`, accent: t.accent, name: e.name,
+            sub: `${esc(t.name)} · ${esc(summaryOf(e))}<br>${lastDone(e.id)}${schedLabel(e) ? ' · ' + esc(schedLabel(e)) : ''}`,
+            go: t.ready ? '›' : 'Soon'
+          }).replace('<span class="go"', done ? `<span class="donemark" style="color:${t.accent}">✓</span><span class="go"` : '<span class="go"');
         }).join('')
       : `<div class="nothing">Nothing here yet.</div>`);
   }).join('');
@@ -1058,14 +1130,11 @@ function renderTypes(){
     const ids = Object.keys(TYPES).filter(k=>TYPES[k].category === c.id);
     return `<h2 class="grp">${esc(c.name)}</h2>` + ids.map(k=>{
       const t = TYPES[k];
-      return `<button class="row ${t.ready?'':'dim'}" data-t="${k}" ${t.ready?'':'disabled'}>
-        <span class="tick" style="background:${t.accent}"></span>
-        <span class="grow">
-          <span class="name">${esc(t.name)}</span>
-          <span class="sub">${esc(t.blurb)}</span>
-        </span>
-        <span class="go">${t.ready?'›':'Soon'}</span>
-      </button>`;
+      return rowHTML({
+        cls: t.ready?'':'dim', attr: `data-t="${k}" ${t.ready?'':'disabled'}`,
+        accent: t.accent, name: t.name, sub: esc(t.blurb),
+        go: t.ready ? '›' : 'Soon'
+      });
     }).join('');
   }).join('');
 }
@@ -1091,14 +1160,8 @@ function renderPresets(typeId){
      <h2 class="hero" style="font-size:clamp(1.9rem,9vw,2.8rem)">Start from a plan</h2>
      <p class="heroSub">Pick something close and adjust it, or build your own from nothing.</p>`
     + list.map((pl,i)=>`
-      <button class="row" data-pl="${i}">
-        <span class="tick"></span>
-        <span class="grow">
-          <span class="name" style="font-size:18px">${esc(pl.name)}</span>
-          <span class="sub">${esc(pl.blurb)}</span>
-        </span>
-        <span class="go">›</span>
-      </button>`).join('')
+      ${rowHTML({attr:`data-pl="${i}"`, name:pl.name, nameStyle:'font-size:18px',
+                 sub:esc(pl.blurb), go:'›'})}`).join('')
     + `<button class="addbtn" id="scratchEx">+ Build my own</button>`;
 }
 el('presetList').addEventListener('click', e=>{
@@ -1127,7 +1190,7 @@ function logOnlyFacts(mine){
     [mine.length, 'Sessions'],
     [total ? hhmm(total) : '—', 'Total time'],
     [mine.length ? hhmm(Math.round(total/mine.length)) : '—', 'Typical'],
-    [last ? new Date(last.start).toLocaleDateString([], {month:'short', day:'numeric'}) : '—', 'Last time'],
+    [last ? dDay(last.start) : '—', 'Last time'],
   ];
 }
 function openExercise(id){
@@ -1143,7 +1206,7 @@ function openExercise(id){
     <p class="eyebrow">${esc(t.name)} · ${esc(catOf(cur.category).name)}</p>
     <h2 class="hero">${esc(cur.name)}</h2>
     <p class="heroSub">${esc(summaryOf(cur))}${schedLabel(cur) ? ' · ' + esc(schedLabel(cur)) : ''}</p>
-    <div class="facts">${facts.map(f=>`<div class="fact"><b>${esc(f[0])}</b><span>${esc(f[1])}</span></div>`).join('')}</div>
+    <div class="facts">${facts.map(f=>tileHTML(esc(f[0]), f[1])).join('')}</div>
     ${cur.logOnly
       ? `<button class="primary" id="logForEx">Log a session</button>`
       : `<button class="primary" id="startEx" ${t.ready?'':'disabled'}>${t.ready ? 'Start' : 'Coming soon'}</button>`}
@@ -1175,15 +1238,10 @@ el('exerciseDetail').addEventListener('click', e=>{
     exercises.push(copy); saveEx(); openExercise(copy.id);
   }
   const del = e.target.closest('#delEx');
-  if(del){
-    if(del.dataset.armed !== '1'){
-      del.dataset.armed = '1'; del.textContent = 'Tap again to delete';
-      setTimeout(()=>{ del.dataset.armed='0'; del.textContent='Delete exercise'; }, 4000);
-      return;
-    }
+  if(del) confirmTap(del, 'Tap again to delete', 'Delete exercise', ()=>{
     exercises = exercises.filter(x=>x.id !== cur.id); saveEx(); cur = null;
     resetAccent(); renderHome(); show('home');
-  }
+  });
 });
 
 /* ══ screen: editor ════════════════════════════════════════════ */
@@ -1483,7 +1541,7 @@ TYPES.meditate.templates = [
 ];
 
 TYPES.meditate.open = ()=>openMed();
-let medTimer = null, medEndAt = 0, medStartAt = 0, peekTimer = null;
+let medEndAt = 0, medStartAt = 0, peekTimer = null;
 
 function openMed(){
   show('med');
@@ -1541,9 +1599,8 @@ function startMed(){
   scheduleSit(S.length*60, true);
   const closeAt = () => medCloseAt;
 
-  clearInterval(medTimer);
-  medTimer = setInterval(()=>{
-    if(!running || paused) return;
+  ticker('med', ()=>{
+    if(!running) return;
     const t = Date.now();
     if(t < medStartAt){
       el('medPhase').textContent = 'Opening';
@@ -1570,6 +1627,7 @@ function pauseMed(on){
     if(medGain){ try{ medGain.disconnect(); }catch(e){} medGain = null; }
     setPaused(true);
     el('medPhase').textContent = 'Paused';
+    el('medPhase').textContent = 'Paused';
     el('medPause').textContent = 'Resume';
     document.body.classList.remove('dim');
   } else {
@@ -1586,7 +1644,7 @@ function finishMed(silence){
   runToken++;
   setPaused(false);
   el('medPause').hidden = true;
-  clearInterval(medTimer); medTimer = null;
+  stopTicker('med');
   if(silence && medGain){
     try{
       const n = actx.currentTime;
@@ -1610,11 +1668,11 @@ el('medStage').addEventListener('click', ()=>{
 });
 el('medGo').addEventListener('click', ()=>{
   if(running) finishMed(true);
-  cur ? openExercise(cur.id) : show('home');
+  backToExercise();
 });
 el('medQuit').addEventListener('click', ()=>{
   if(running) finishMed(true);
-  cur ? openExercise(cur.id) : show('home');
+  backToExercise();
 });
 
 /* ══ speech ════════════════════════════════════════════════════ */
@@ -1713,7 +1771,7 @@ function wait(ms){
 function cancelWaits(){ waiters.forEach(o=>{ clearTimeout(o.t); o.resolve(); }); waiters = []; }
 
 /* ══ session ═══════════════════════════════════════════════════ */
-let running = false, round = 1, remain = 0, tick = null, wakeLock = null, live = null;
+let running = false, round = 1, remain = 0, wakeLock = null, live = null;
 
 /* Pause freezes every clock at once — the round, the reset countdown
    and the session total. What gets logged is time worked, so a 30
@@ -1722,6 +1780,32 @@ let running = false, round = 1, remain = 0, tick = null, wakeLock = null, live =
    starts before it wakes, the shared `running` flag makes it believe it
    is still live — a Muay Thai loop once resumed inside a meditation.
    Each run carries a token so an old loop can recognise itself. */
+/* ══ tickers ════════════════════════════════════════════════════
+   Every repeating clock in the app runs through here, so pause is
+   honoured in exactly one place. Each callback receives the elapsed
+   milliseconds since it last ran, which is zero while paused — a
+   countdown that subtracts dt therefore freezes for free instead of
+   each timer remembering to check a flag. */
+const tickers = new Map();
+function ticker(id, fn, ms, opts){
+  stopTicker(id);
+  const o = opts || {};
+  let last = Date.now();
+  const beat = ()=>{
+    const now = Date.now();
+    if(paused && !o.whilePaused){ last = now; return; }
+    const dt = now - last; last = now;
+    fn(paused ? 0 : dt);
+  };
+  tickers.set(id, setInterval(beat, ms || 250));
+  fn(0);                       // paint immediately rather than after one interval
+}
+function stopTicker(id){
+  const h = tickers.get(id);
+  if(h){ clearInterval(h); tickers.delete(id); }
+}
+function stopAllTickers(){ [...tickers.keys()].forEach(stopTicker); }
+
 let runToken = 0;
 const alive = tok => running && tok === runToken;
 
@@ -1767,7 +1851,7 @@ function stop(){
   cancelWaits();
   el('pauseBtn').hidden = true;
   try{ speechSynthesis.cancel(); }catch(e){}
-  clearInterval(tick); tick = null;
+  stopClock();
   setRope(0,0);
   go().textContent = 'Start'; go().classList.remove('stop');
   el('phase').textContent = 'Done';
@@ -1873,18 +1957,16 @@ function setRope(seconds, to){
 }
 function startClock(sec){
   remain = sec;
-  el('clock').textContent = fmt(remain);
-  el('clock').classList.remove('warn');
-  clearInterval(tick);
-  tick = setInterval(()=>{
-    if(paused) return;
-    remain--;
-    el('clock').textContent = fmt(Math.max(0,remain));
+  let acc = 0;
+  ticker('round', dt=>{
+    acc += dt;
+    while(acc >= 1000 && remain > 0){ acc -= 1000; remain--; }
+    el('clock').textContent = fmt(Math.max(0, remain));
     el('clock').classList.toggle('warn', remain <= 10);
-    if(remain <= 0) clearInterval(tick);
-  }, 1000);
+    if(remain <= 0) stopTicker('round');
+  }, 250);
 }
-function stopClock(){ clearInterval(tick); tick = null; el('clock').classList.remove('warn'); }
+function stopClock(){ stopTicker('round'); el('clock').classList.remove('warn'); }
 
 function endSession(){
   if(!live) return;
@@ -1915,7 +1997,7 @@ el('pauseBtn').addEventListener('click', ()=>{
 });
 el('quit').addEventListener('click', ()=>{
   if(running) stop();
-  cur ? openExercise(cur.id) : show('home');
+  backToExercise();
 });
 document.addEventListener('visibilitychange', async ()=>{
   if(document.visibilityState === 'visible' && running && navigator.wakeLock && !wakeLock){
@@ -1946,9 +2028,9 @@ function totalsBlock(list){
   const streak = currentStreak();
   const total = list.reduce((n,s)=>n+s.dur, 0);
   return `<div class="totals">
-      <div class="tot"><b>${list.length}</b><span>Sessions</span></div>
-      <div class="tot"><b>${days}</b><span>Days trained</span></div>
-      <div class="tot"><b>${streak}</b><span>Day streak</span></div>
+      ${tileHTML(list.length, 'Sessions', true)}
+      ${tileHTML(days, 'Days trained', true)}
+      ${tileHTML(streak, 'Day streak', true)}
     </div>
     ${list.length ? `<p class="adh" style="margin:-10px 0 20px">
       <b>${hhmm(total)}</b> total · body <b>${hhmm(body.reduce((n,s)=>n+s.dur,0))}</b>
@@ -1978,6 +2060,27 @@ function typeBreakdown(list){
    written text — supplies its own editor; everything else gets the
    generic time-and-note form. A session with no detail has nothing
    type-specific to edit, so it uses the generic form too. */
+let editReturn = 'stats';
+
+/* A type's editor doubles as its live session screen, which hides the
+   top bar and closes with ✕ because you are mid-workout. Opening one
+   to edit something that already happened is a form, not a session:
+   it gets the top bar, a back arrow, and returns where you came from.
+   Types call these rather than deciding for themselves. */
+function beginEdit(screenId){
+  editReturn = (screen === 'exercise') ? 'exercise' : 'stats';
+  const sec = el('s-' + screenId);
+  if(sec){ sec.classList.remove('sessionScreen'); sec.classList.add('editing'); }
+  BACKTO[screenId] = ()=>endEdit(screenId);
+}
+function endEdit(screenId){
+  const sec = el('s-' + screenId);
+  if(sec){ sec.classList.add('sessionScreen'); sec.classList.remove('editing'); }
+  delete BACKTO[screenId];
+  if(editReturn === 'exercise' && cur) return openExercise(cur.id);
+  renderStats(); show('stats');
+}
+
 function editSession(s){
   const t = typeOf(s.type);
   if(t.editSession && s.detail) return t.editSession(s);
@@ -1998,7 +2101,7 @@ function sessionRows(list){
   return list.slice().sort((a,b)=>b.start-a.start).map(s=>`
     <button class="sess" data-sid="${s.start}">
       <div class="when">${esc(s.name || s.routine || 'Session')}${s.source === 'manual' ? '<span class="tag">Logged</span>' : ''}
-        <small>${esc(typeOf(s.type).name)} · ${new Date(s.start).toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'})} · ${timeOf(s.start)}</small>
+        <small>${esc(typeOf(s.type).name)} · ${dWeek(s.start)} · ${dTime(s.start)}</small>
         ${sessionLine(s) ? `<small class="detail">${esc(sessionLine(s))}</small>` : ''}
       </div>
       <div class="dur">${hhmm(s.dur)}</div>
@@ -2016,22 +2119,22 @@ function renderStats(){
 
   if(statView === 'day'){
     const d = addDays(dayStart(now), statOffset);
-    const list = sessions.filter(s=>inRange(s, d, addDays(d, 1)));
+    const list = sessionsIn(d, addDays(d,1));
     body.innerHTML = navRow(statOffset === 0 ? 'Today'
-      : d.toLocaleDateString([], {weekday:'long', month:'short', day:'numeric'}))
+      : dLong(d))
       + totalsBlock(list) + typeBreakdown(list) + sessionRows(list);
   }
   else if(statView === 'week'){
     const a = weekStart(now); a.setDate(a.getDate() + statOffset*7);
     const b = addDays(a, 7);
-    const list = sessions.filter(s=>inRange(s,a,b));
+    const list = sessionsIn(a,b);
     /* Counts, not minutes — one sit and one long class are both one
        session, which is what the rest of this page now measures. Each
        segment is a type, so hue still reads warm for body, cool for
        mind, while saying which kind of training it was. */
     const perDay = [...Array(7)].map((_,i)=>{
       const d0 = addDays(a, i), d1 = addDays(d0, 1);
-      const day = sessions.filter(s=>inRange(s, d0, d1));
+      const day = sessionsIn(d0, d1);
       const byType = {};
       day.forEach(x=>{ byType[x.type] = (byType[x.type] || 0) + 1; });
       return {count: day.length, byType};
@@ -2045,10 +2148,10 @@ function renderStats(){
         .join('');
       return `<div><b>${d.count || ''}</b>${segs || '<i class="none" style="height:1%"></i>'}</div>`;
     }).join('');
-    const shown = [...new Set(sessions.filter(s=>inRange(s,a,b)).map(s=>s.type))]
+    const shown = [...new Set(sessionsIn(a,b).map(s=>s.type))]
       .sort((x,y)=>order(x)-order(y) || x.localeCompare(y));
     const label = statOffset === 0 ? 'This week' : statOffset === -1 ? 'Last week'
-      : `${a.toLocaleDateString([], {month:'short', day:'numeric'})} – ${addDays(b, -1).toLocaleDateString([], {month:'short', day:'numeric'})}`;
+      : `${dDay(a)} – ${dDay(addDays(b, -1))}`;
     const ad = adherence(a, b);
     body.innerHTML = navRow(label) + totalsBlock(list) + typeBreakdown(list)
       + (ad.plan ? `<p class="adh">Planned sessions — <b>${ad.hit} of ${ad.plan}</b></p>` : '')
@@ -2062,7 +2165,7 @@ function renderStats(){
   else {
     const a = monthStart(now); a.setMonth(a.getMonth() + statOffset);
     const b = new Date(a.getFullYear(), a.getMonth()+1, 1);
-    const list = sessions.filter(s=>inRange(s,a,b));
+    const list = sessionsIn(a,b);
     const days = Math.round((b-a)/DAY);
     const lead = (a.getDay()+6)%7;
     const today = dayStart(new Date()).getTime();
@@ -2070,7 +2173,7 @@ function renderStats(){
     const nowD = dayStart(new Date());
     const perDay = [...Array(days)].map((_,i)=>{
       const d0 = new Date(a.getFullYear(), a.getMonth(), i+1);
-      const day = sessions.filter(s=>inRange(s, d0, addDays(d0, 1)));
+      const day = sessionsIn(d0, addDays(d0,1));
       const ph = mins(day.filter(s=>s.category==='physical'));
       const mt = mins(day.filter(s=>s.category==='mental'));
       const m = ph + mt;
@@ -2087,7 +2190,7 @@ function renderStats(){
         + (d.m ? `<u style="height:${fill}%;background:${d.colour}"></u>` : '')
         + `<span>${i+1}</span></i>`;
     });
-    body.innerHTML = navRow(a.toLocaleDateString([], {month:'long', year:'numeric'}))
+    body.innerHTML = navRow(dMonth(a))
       + totalsBlock(list) + typeBreakdown(list)
       + `<div class="cal">${cells}</div>` + sessionRows(list);
   }
@@ -2133,13 +2236,9 @@ el('exportics').addEventListener('click', ()=>{
 el('clearlog').addEventListener('click', e=>{
   const btn = e.currentTarget;
   if(!sessions.length) return;
-  if(btn.dataset.armed !== '1'){
-    btn.dataset.armed = '1'; btn.textContent = 'Tap again to erase everything';
-    setTimeout(()=>{ btn.dataset.armed='0'; btn.textContent='Clear all history'; }, 4000);
-    return;
-  }
-  sessions = []; saveSessions(); renderStats(); renderHome();
-  btn.dataset.armed = '0'; btn.textContent = 'Clear all history';
+  confirmTap(btn, 'Tap again to erase everything', 'Clear all history', ()=>{
+    sessions = []; sessionsChanged();
+  });
 });
 
 /* ══ manual logging and session editing ═══════════════════════
@@ -2251,22 +2350,17 @@ function openLog(exId, existing){
         start, dur: minutes*60, source:'manual', effort, note
       }));
     }
-    saveSessions(); renderStats(); renderHome();
+    sessionsChanged();
     logKey = null;
     logFrom === 'exercise' && cur ? openExercise(cur.id) : show('stats');
   });
 
   const del = el('logDel');
-  if(del) del.addEventListener('click', ()=>{
-    if(del.dataset.armed !== '1'){
-      del.dataset.armed = '1'; del.textContent = 'Tap again to delete';
-      setTimeout(()=>{ del.dataset.armed = '0'; del.textContent = 'Delete session'; }, 4000);
-      return;
-    }
-    sessions = sessions.filter(x=>x !== existing);
-    saveSessions(); renderStats(); renderHome();
-    show('stats');
-  });
+  if(del) del.addEventListener('click', ()=>
+    confirmTap(del, 'Tap again to delete', 'Delete session', ()=>{
+      removeSession(existing);
+      show('stats');
+    }));
 
   show('log');
 }
@@ -2410,6 +2504,16 @@ el('test').addEventListener('click', ()=>{
     note.textContent = 'Listening for output…';
   }catch(e){ note.textContent = 'Speech is unavailable in this browser.'; }
 });
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2631,16 +2735,8 @@ css.textContent += `
 document.head.appendChild(css);
 
 /* ── screens ──────────────────────────────────────────────── */
-const mk = (id, cls) => {
-  const s = document.createElement('section');
-  s.className = 'screen' + (cls ? ' '+cls : '');
-  s.id = 's-' + id;
-  s.innerHTML = `<div class="scroll" id="${id}Body"></div>`;
-  document.querySelector('main').appendChild(s);
-  return s;
-};
-mk('lift', 'sessionScreen');
-mk('pick');
+makeScreen('lift', {session:true, title:'Workout'});
+makeScreen('pick', {title:'Add movement'});
 /* the movement library travels with a backup */
 EXPORTERS.movements = {
   get: ()=>MOVES,
@@ -2662,7 +2758,7 @@ EXPORTERS.movements = {
    workout it appears in. "Previous" stays scoped to one workout
    because order and rest change what you can lift; history is not,
    because your best bench is your best bench. */
-const histScreen = mk('mvhist', `<div class="scroll" id="histBody"></div>`);
+const histScreen = makeScreen('mvhist', {title:'History'});
 let histFrom = 'lift';
 
 const rungIndex = (m, lvl) => m.ladder ? Math.max(0, m.ladder.indexOf(lvl)) : 0;
@@ -2738,7 +2834,7 @@ function openHistory(mid, from){
     ${rows.map(r=>`
       <div class="sess">
         <div class="when">${esc(r.name)}
-          <small>${new Date(r.start).toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'})} · ${
+          <small>${dWeek(r.start)} · ${
             r.sets.map(st=>setText(m, st)).join(' · ')}</small>
         </div>
       </div>`).join('')}`;
@@ -2916,7 +3012,7 @@ function wireNewMove(){
 }
 
 /* ── the session ──────────────────────────────────────────── */
-let draft = null, liftStart = 0, restEnd = 0, restTimer = null, elapsedTimer = null;
+let draft = null, liftStart = 0;
 const K_DRAFT = 'practice.liftdraft.v1';
 
 /* how a strength session reads in Stats and in the calendar export */
@@ -2994,13 +3090,18 @@ function openLiftEdit(sess){
       };
     })
   };
-  renderLift(); show('lift');
+  renderLift();
+  beginEdit('lift');
+  show('lift');
   el('title').textContent = 'Edit workout';
 }
 T.editSession = sess => openLiftEdit(sess);
 
 function openLift(backdate){
   editingLift = null;
+  const sec = el('s-lift');
+  if(sec){ sec.classList.add('sessionScreen'); sec.classList.remove('editing'); }
+  delete BACKTO.lift;
   const c = cur.cfg;
   if(!c.items || !c.items.length){
     openEditor(cur, false);
@@ -3189,23 +3290,22 @@ el('liftBody').addEventListener('click', e=>{
   if(e.target.closest('#finishLift')) return finishLift();
   const cancel = e.target.closest('#cancelLift');
   if(cancel){
-    if(cancel.dataset.armed !== '1'){
-      const word = (draft && draft.editing) ? 'delete' : 'discard';
-      cancel.dataset.armed = '1'; cancel.textContent = 'Tap again to ' + word;
-      setTimeout(()=>{ cancel.dataset.armed='0';
-        cancel.textContent = (draft && draft.editing) ? 'Delete workout' : 'Discard'; }, 4000);
-      return;
-    }
-    stopRest(); stopElapsed(); resetPause();
-    if(draft && draft.editing && editingLift){
-      sessions = sessions.filter(x=>x !== editingLift);
-      saveSessions(); renderStats(); renderHome();
-      editingLift = null;
-    } else {
-      write(draft && draft.backdate ? K_PAST : K_DRAFT, null);
-    }
-    draft = null;
-    openExercise(cur.id);
+    const isEdit = !!(draft && draft.editing);
+    return confirmTap(cancel,
+      isEdit ? 'Tap again to delete' : 'Tap again to discard',
+      isEdit ? 'Delete workout' : 'Discard', ()=>{
+        stopRest(); stopElapsed(); resetPause();
+        const wasEdit = !!(draft && draft.editing && editingLift);
+        if(wasEdit){
+          removeSession(editingLift);
+          editingLift = null;
+        } else {
+          write(draft && draft.backdate ? K_PAST : K_DRAFT, null);
+        }
+        draft = null;
+        if(wasEdit) return endEdit('lift');
+        backToExercise();
+      });
   }
 });
 
@@ -3225,41 +3325,43 @@ function applyAutofill(){
 }
 
 /* ── rest timer ───────────────────────────────────────────── */
+/* Holds the time remaining rather than an end timestamp. The ticker
+   reports zero elapsed while paused, so the countdown freezes with no
+   special case — the old version had to inch restEnd forward by hand. */
+let restLeft = 0;
+function paintRest(){
+  el('restT').textContent = fmt(Math.max(0, Math.round(restLeft/1000)));
+}
 function startRest(item){
-  restEnd = Date.now() + item.rest*1000;
+  restLeft = item.rest * 1000;
   el('restN').textContent = 'Rest · ' + item.name;
   bar.classList.add('on');
-  clearInterval(restTimer);
-  restTimer = setInterval(tickRest, 200);
-  tickRest();
-}
-function tickRest(){
-  if(paused){ restEnd += 200; return; }   // hold the countdown while paused
-  const left = Math.max(0, Math.round((restEnd - Date.now())/1000));
-  el('restT').textContent = fmt(left);
-  if(left <= 0){
-    clearInterval(restTimer); restTimer = null;
-    try{ ensureAudio(); bowl(actx.currentTime + 0.05, 0.7, null); }catch(e){}
-    el('restN').textContent = 'Go';
-    setTimeout(()=>{ if(!restTimer) bar.classList.remove('on'); }, 2500);
-  }
+  ticker('rest', dt=>{
+    restLeft -= dt;
+    paintRest();
+    if(restLeft <= 0){
+      stopTicker('rest');
+      try{ ensureAudio(); bowl(actx.currentTime + 0.05, 0.7, null); }catch(e){}
+      el('restN').textContent = 'Go';
+      setTimeout(()=>{ if(!tickers.has('rest')) bar.classList.remove('on'); }, 2500);
+    }
+  }, 200);
 }
 function stopRest(){
-  clearInterval(restTimer); restTimer = null;
+  stopTicker('rest');
   bar.classList.remove('on');
 }
 el('restSkip').addEventListener('click', stopRest);
-el('restAdd').addEventListener('click', ()=>{ restEnd += 30000; tickRest(); });
+el('restAdd').addEventListener('click', ()=>{ restLeft += 30000; paintRest(); });
 
 function startElapsed(){
-  clearInterval(elapsedTimer);
-  elapsedTimer = setInterval(()=>{
-    if(paused){ el('title').textContent = 'Paused'; return; }
+  /* runs while paused so it can say so */
+  ticker('elapsed', ()=>{
     if(screen !== 'lift') return;
-    el('title').textContent = fmt(workedSecs(liftStart));
-  }, 1000);
+    el('title').textContent = paused ? 'Paused' : fmt(workedSecs(liftStart));
+  }, 1000, {whilePaused:true});
 }
-function stopElapsed(){ clearInterval(elapsedTimer); elapsedTimer = null; el('title').textContent = 'Workout'; }
+function stopElapsed(){ stopTicker('elapsed'); el('title').textContent = 'Workout'; }
 
 /* ── finishing ────────────────────────────────────────────── */
 /* Takes items whose loads are already canonical pounds. */
@@ -3287,16 +3389,13 @@ function finishLift(){
     /* Nothing was entered. Silently binning the draft would lose the
        session, so say so and leave it exactly as it is. */
     const btn = el('finishLift');
-    if(btn){
-      if(btn.dataset.armed !== '1'){
-        btn.dataset.armed = '1';
-        btn.textContent = draft && draft.backdate
+    if(btn && btn.dataset.armed !== '1'){
+      return confirmTap(btn,
+        draft && draft.backdate
           ? 'No sets logged — tap again, or log the time instead below'
-          : 'No sets logged — tap again to end anyway';
-        setTimeout(()=>{ btn.dataset.armed = '0';
-          btn.textContent = draft && draft.backdate ? 'Save workout' : 'Finish workout'; }, 5000);
-        return;
-      }
+          : 'No sets logged — tap again to end anyway',
+        draft && draft.backdate ? 'Save workout' : 'Finish workout',
+        ()=>finishLift());
     }
   }
   setPaused(false);          // close any open pause before measuring
@@ -3316,10 +3415,10 @@ function finishLift(){
     editingLift.dur = mins*60;
     editingLift.detail = { items, volume:volumeOf(items), unit:'lb',
                            sets:items.reduce((n,i)=>n+i.sets.length,0) };
-    saveSessions(); renderStats(); renderHome();
+    sessionsChanged();
     editingLift = null; draft = null;
     stopRest(); stopElapsed();
-    return cur ? openExercise(cur.id) : show('home');
+    return endEdit('lift');
   }
   if(items.length){
     lastDiscard = 0;
@@ -3399,10 +3498,7 @@ css.textContent = `
 document.head.appendChild(css);
 
 /* ── screen ──────────────────────────────────────────────────── */
-const sec = document.createElement('section');
-sec.className = 'screen sessionScreen';
-sec.id = 's-write';
-sec.innerHTML = `
+makeScreen('write', {session:true, title:'Journal', html:`
   <div class="sessbar">
     <span class="eyebrow" id="writeName">Journal</span>
     <span class="spacer"></span>
@@ -3419,21 +3515,19 @@ sec.innerHTML = `
     <textarea id="writeText" placeholder="Write."></textarea>
     <button class="primary" id="writeSave" style="margin-top:16px">Save entry</button>
     <button class="ghost danger" id="writeDel" hidden>Delete entry</button>
-  </div>`;
-document.querySelector('main').appendChild(sec);
-TITLES.write = 'Journal';
+  </div>`});
 
 /* ── state ───────────────────────────────────────────────────── */
 const K_DRAFT = 'practice.writedraft.v1';
 let editingEntry = null;   // the session being edited, or null for a new one
 let entryStart = 0;
-let writeTick = null, writeEndsAt = 0;
+let writeEndsAt = 0;
 
 /* Time worked, the same rule the timed types follow. The clock accrues
    while you are typing and stops itself after a stretch of nothing, so
    a draft left open overnight records the writing, not the night. */
 const IDLE_AFTER = 45000;
-let wrote = 0, lastKey = 0, idleTick = null, whenTick = null;
+let wrote = 0, lastKey = 0, idleTick = null;
 
 function beginWriting(){
   const now = Date.now();
@@ -3456,9 +3550,13 @@ const words = t => (String(t||'').trim().match(/\S+/g) || []).length;
 const stamp = ms => new Date(ms).toLocaleString([], {
   weekday:'long', month:'short', day:'numeric', hour:'numeric', minute:'2-digit'
 });
-const entriesFor = exId => sessions
-  .filter(s => s.type === 'journal' && s.exerciseId === exId)
-  .sort((a,b) => b.start - a.start);
+/* a new entry is a session screen; an existing one is a form */
+const endEditChrome = ()=>{
+  const sec = el('s-write');
+  if(sec){ sec.classList.add('sessionScreen'); sec.classList.remove('editing'); }
+  delete BACKTO.write;
+};
+const entriesFor = exId => sessionsFor(exId).filter(s => s.type === 'journal');
 
 /* ── the type ────────────────────────────────────────────────── */
 Object.assign(J, {
@@ -3471,7 +3569,7 @@ Object.assign(J, {
     const last = mine[0];
     return [
       [mine.length, 'Entries'],
-      [last ? new Date(last.start).toLocaleDateString([], {month:'short', day:'numeric'}) : '—', 'Last entry'],
+      [last ? dDay(last.start) : '—', 'Last entry'],
     ];
   },
   /* Nothing to configure — a journal is a blank page. The shell still
@@ -3498,12 +3596,11 @@ function openWrite(existing){
 
   el('writeName').textContent = cur ? cur.name : 'Journal';
   el('writeWhen').textContent = stamp(entryStart);
-  clearInterval(whenTick);
-  whenTick = setInterval(()=>{
+  ticker('writeClock', ()=>{
     if(screen !== 'write') return;
     const s = writtenSecs();
     el('writeWhen').textContent = stamp(entryStart) + (s >= 30 ? '  ·  ' + fmt(s) + ' writing' : '');
-  }, 1000);
+  }, 1000, {whilePaused:true});
   el('writeText').value = existing ? (existing.detail && existing.detail.text || '')
                         : (resumed ? resumed.text : '');
   el('writeSave').textContent = existing ? 'Save changes' : 'Save entry';
@@ -3516,6 +3613,7 @@ function openWrite(existing){
   const mins = (cur && cur.cfg && cur.cfg.timer) || 0;
   el('writeMins').value = mins;
   paintMins();
+  existing ? beginEdit('write') : endEditChrome();
   show('write');
   setTimeout(()=>{ try{ el('writeText').focus(); }catch(e){} }, 60);
 }
@@ -3525,12 +3623,12 @@ function openWrite(existing){
 function paintMins(){
   const v = +el('writeMins').value;
   el('writeMinsV').textContent = v ? v + ' min' : 'Off';
-  el('writeTimerGo').hidden = !v || !!writeTick;
+  el('writeTimerGo').hidden = !v || tickers.has('writeLimit');
   el('writeTimerGo').textContent = 'Start';
   el('writeTimerGo').classList.remove('on');
 }
 function stopWriteTimer(){
-  clearInterval(writeTick); writeTick = null;
+  stopTicker('writeLimit');
   const b = el('writeTimerGo');
   if(b){ b.classList.remove('on'); b.textContent = 'Start'; }
 }
@@ -3540,8 +3638,7 @@ function startWriteTimer(){
   writeEndsAt = Date.now() + v*60000;
   const b = el('writeTimerGo');
   b.hidden = false; b.classList.add('on');
-  clearInterval(writeTick);
-  const paint = ()=>{
+  ticker('writeLimit', ()=>{
     const left = Math.max(0, Math.round((writeEndsAt - Date.now())/1000));
     b.textContent = fmt(left);
     if(left <= 0){
@@ -3549,17 +3646,15 @@ function startWriteTimer(){
       b.textContent = 'Time';
       try{ ensureAudio(); bowl(actx.currentTime + 0.05, 0.6, null); }catch(e){}
     }
-  };
-  paint();
-  writeTick = setInterval(paint, 250);
+  }, 250, {whilePaused:true});
 }
 el('writeMins').addEventListener('input', ()=>{
   if(cur && cur.cfg){ cur.cfg.timer = +el('writeMins').value; saveEx(); }
-  if(writeTick) stopWriteTimer();
+  if(tickers.has('writeLimit')) stopWriteTimer();
   paintMins();
 });
 el('writeTimerGo').addEventListener('click', ()=>{
-  writeTick ? (stopWriteTimer(), paintMins()) : startWriteTimer();
+  tickers.has('writeLimit') ? (stopWriteTimer(), paintMins()) : startWriteTimer();
 });
 
 el('writeText').addEventListener('input', ()=>{
@@ -3577,7 +3672,7 @@ el('writeSave').addEventListener('click', ()=>{
     editingEntry.detail = {text, words: words(text)};
     editingEntry.dur = secs;
     editingEntry.end = editingEntry.start + secs*1000;
-    saveSessions(); renderStats(); renderHome();
+    sessionsChanged();
   } else {
     commitSession(makeSession(cur, {
       start: entryStart, dur: secs, source:'app',
@@ -3586,31 +3681,29 @@ el('writeSave').addEventListener('click', ()=>{
     write(K_DRAFT, null);
   }
   resetWriting(0);
-  stopWriteTimer(); clearInterval(whenTick);
+  stopWriteTimer(); stopTicker('writeClock');
+  const wasEdit = !!editingEntry;
   editingEntry = null;
-  cur ? openExercise(cur.id) : show('home');
+  if(wasEdit) return endEdit('write');
+  backToExercise();
 });
 
-el('writeDel').addEventListener('click', ()=>{
-  const b = el('writeDel');
-  if(b.dataset.armed !== '1'){
-    b.dataset.armed = '1'; b.textContent = 'Tap again to delete';
-    setTimeout(()=>{ b.dataset.armed = '0'; b.textContent = 'Delete entry'; }, 4000);
-    return;
-  }
-  sessions = sessions.filter(s => s !== editingEntry);
-  saveSessions(); renderStats(); renderHome();
-  stopWriteTimer(); clearInterval(whenTick);
-  editingEntry = null;
-  cur ? openExercise(cur.id) : show('home');
-});
+el('writeDel').addEventListener('click', ()=>
+  confirmTap(el('writeDel'), 'Tap again to delete', 'Delete entry', ()=>{
+    removeSession(editingEntry);
+    stopWriteTimer(); stopTicker('writeClock');
+    editingEntry = null;
+    endEdit('write');
+  }));
 
 el('writeQuit').addEventListener('click', ()=>{
   /* An unfinished new entry stays in the draft, so leaving never
      loses writing. An edit simply reverts. */
-  stopWriteTimer(); clearInterval(whenTick);
+  stopWriteTimer(); stopTicker('writeClock');
+  const wasEdit = !!editingEntry;
   editingEntry = null;
-  cur ? openExercise(cur.id) : show('home');
+  if(wasEdit) return endEdit('write');
+  backToExercise();
 });
 
 /* ── entries listed on the exercise screen ───────────────────── */
@@ -3620,8 +3713,8 @@ J.detailExtra = ex => {
   return `<h2 class="sec">Entries</h2>` + mine.map(s=>{
     const t = (s.detail && s.detail.text || '').trim();
     return `<button class="entryRow" data-entry="${s.start}">
-      <span class="when">${esc(new Date(s.start).toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'}))}
-        · ${esc(new Date(s.start).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}))}${
+      <span class="when">${esc(dWeek(s.start))}
+        · ${esc(dTime(s.start))}${
           s.source === 'manual' ? ' · on paper' : ''}</span>
       <span class="peek${t?'':' none'}">${t ? esc(t.slice(0, 160)) : 'Logged, no text'}</span>
     </button>`;
