@@ -23,12 +23,13 @@
     --line:#E2E1DD;        /* hairlines and borders */
     --text:#1A1A1D;        /* primary type */
     --text-dim:#6E6E76;    /* secondary type, labels */
-    --brand:#8A6D0F;       /* app accent, used where no type applies */
-    --accent:#8A6D0F;      /* current exercise type, set at runtime */
-    --on-accent:#FFFFFF;   /* type on an accent fill */
+    --brand:#FFC40C;       /* app fill, used where no type applies */
+    --accent:#FFC40C;      /* current exercise type, set at runtime */
+    --on-accent:#1A1A1D;   /* type ON an accent fill — accents are
+                              never used for text, only for fills */
     --danger:#AE3C2C;
-    --physical:#8A6D0F;
-    --mental:#2E7A6F;
+    --physical:#FFC40C;
+    --mental:#12BFA6;
     --display:'Avenir Next Condensed','HelveticaNeue-CondensedBold','Arial Narrow',system-ui,sans-serif;
     --body:-apple-system,BlinkMacSystemFont,system-ui,'Segoe UI',sans-serif;
     --mono:ui-monospace,'SF Mono',Menlo,monospace;
@@ -73,7 +74,13 @@
   .nav{display:flex;border-top:1px solid var(--line);flex:none;padding-bottom:env(safe-area-inset-bottom);}
   .nav button{flex:1;padding:13px 6px 15px;text-align:center;color:var(--text-dim);font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;font-size:11px;font-weight:600;}
   .nav button b{display:block;font-size:17px;font-weight:400;margin-bottom:4px;}
-  .nav button[aria-current=page]{color:var(--brand);}
+  .nav button{position:relative;}
+  .nav button[aria-current=page]{color:var(--text);}
+  /* the active tab is marked with a fill, not coloured type */
+  .nav button[aria-current=page]::after{
+    content:'';position:absolute;left:50%;transform:translateX(-50%);
+    bottom:6px;width:20px;height:3px;border-radius:2px;background:var(--brand);
+  }
   body.session .nav,body.session .top{display:none;}
 
   /* balance */
@@ -99,7 +106,7 @@
   .row .donemark{font-size:15px;flex:none;margin-right:-4px;}
   .row.today .mark{
     width:26px;height:26px;border-radius:50%;border:1px solid var(--line);
-    display:grid;place-items:center;color:var(--accent);font-size:13px;flex:none;
+    display:grid;place-items:center;color:var(--text);font-size:13px;flex:none;
   }
   .row.today.isdone .mark{background:var(--brand);border-color:var(--brand);color:var(--bg);}
   .row.today.isdone .name{opacity:.55;}
@@ -119,7 +126,7 @@
   .heroSub{color:var(--text-dim);font-size:14px;margin:0 0 26px;}
   .facts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:28px;}
   .fact{border:1px solid var(--line);border-radius:2px;padding:13px 12px;}
-  .fact b{display:block;font-family:var(--display);font-size:23px;font-weight:700;line-height:1;margin-bottom:6px;color:var(--accent);}
+  .fact b{display:block;font-family:var(--display);font-size:23px;font-weight:700;line-height:1;margin-bottom:6px;color:var(--text);}
   .fact span{font-family:var(--display);text-transform:uppercase;letter-spacing:.12em;font-size:10px;color:var(--text-dim);}
   .primary{width:100%;padding:20px;background:var(--accent);color:var(--on-accent);font-family:var(--display);font-weight:700;text-transform:uppercase;letter-spacing:.14em;font-size:19px;border-radius:2px;text-align:center;}
   .primary:active{transform:scale(.99);}
@@ -131,7 +138,7 @@
   h2.sec:first-child{margin-top:0;}
   .field{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:9px 0;}
   .field label{font-size:15px;}
-  .field .val{font-family:var(--mono);font-size:14px;color:var(--accent);font-variant-numeric:tabular-nums;}
+  .field .val{font-family:var(--mono);font-size:14px;color:var(--text);font-variant-numeric:tabular-nums;}
   input[type=range]{-webkit-appearance:none;width:100%;height:26px;background:none;margin:0;}
   input[type=range]::-webkit-slider-runnable-track{height:2px;background:var(--line);}
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;margin-top:-12px;border-radius:50%;background:var(--accent);}
@@ -149,7 +156,7 @@
   .stage{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;padding:20px 18px;overflow:hidden;}
   .strike{display:flex;align-items:baseline;gap:16px;padding:6px 0 6px 14px;border-left:3px solid transparent;opacity:.34;transition:opacity .16s ease,border-color .16s ease,transform .16s ease;}
   .strike.on{opacity:1;border-left-color:var(--accent);transform:translateX(4px);}
-  .strike .n{font-family:var(--mono);font-size:17px;color:var(--accent);width:1.1em;flex:none;padding-top:.3em;text-align:right;}
+  .strike .n{font-family:var(--mono);font-size:17px;color:var(--text);width:1.1em;flex:none;padding-top:.3em;text-align:right;}
   .strike .t{font-family:var(--display);font-weight:700;text-transform:uppercase;line-height:.98;font-size:clamp(2rem,10.5vw,4.6rem);}
   .strike.def .t{color:var(--text-dim);font-weight:600;font-style:italic;}
   .strike.def.on .t{color:var(--danger);}
@@ -172,7 +179,7 @@
   .navrow span{font-family:var(--display);text-transform:uppercase;letter-spacing:.16em;font-size:14px;font-weight:600;}
   .totals{display:flex;gap:10px;margin-bottom:22px;}
   .tot{flex:1;border:1px solid var(--line);border-radius:2px;padding:12px 10px;}
-  .tot b{display:block;font-family:var(--display);font-size:26px;font-weight:700;line-height:1;margin-bottom:5px;color:var(--brand);}
+  .tot b{display:block;font-family:var(--display);font-size:26px;font-weight:700;line-height:1;margin-bottom:5px;color:var(--text);}
   .tot span{font-family:var(--display);text-transform:uppercase;letter-spacing:.12em;font-size:10px;color:var(--text-dim);}
   .brk{margin:-6px 0 24px;}
   .brkrow{display:flex;align-items:center;gap:10px;padding:7px 0;}
@@ -228,7 +235,7 @@
     border-radius:2px;padding:2px 5px;margin-left:7px;color:var(--text-dim);vertical-align:1px;
   }
   .sess .when small.detail{color:var(--text);opacity:.75;font-family:var(--mono);font-size:11px;}
-  .sess .dur{font-family:var(--mono);font-size:16px;color:var(--brand);}
+  .sess .dur{font-family:var(--mono);font-size:16px;color:var(--text);}
   .empty{color:var(--text-dim);font-size:14px;line-height:1.5;padding:26px 0;}
   @media (prefers-reduced-motion:reduce){*{transition:none!important;}}
 </style>
@@ -567,7 +574,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '5.4';
+const APP_VERSION = '5.7';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -616,7 +623,7 @@ const MT_DEFAULTS = {
 };
 const TYPES = {
   muaythai:{
-    name:'Muay Thai', category:'physical', accent:'#8A6D0F', ink:'#FFFFFF', accentDark:'#C9A227', inkDark:'#231014',
+    name:'Muay Thai', category:'physical', accent:'#FFC40C', ink:'#1A1A1D', accentDark:'#C9A227', inkDark:'#231014',
     ready:true, kind:'timed', blurb:'Spoken combo callouts on a round timer',
     line:s=>{ const d = s.detail || s; return d.rounds ? `${d.rounds} rounds · ${d.combos || 0} combos` : ''; },
     defaults:()=>JSON.parse(JSON.stringify(MT_DEFAULTS)),
@@ -632,81 +639,42 @@ const TYPES = {
       [Object.values(c.groups).filter(Boolean).length, 'Weapon groups'],
       [done, 'Times done']
     ],
-    editorHTML:c=>`
-      <h2 class="sec">Combo</h2>
-      <div class="field"><label>Shortest combo</label><span class="val" id="minSv"></span></div>
-      <input type="range" id="minS" min="1" max="6" step="1" value="${c.min}">
-      <div class="field"><label>Longest combo</label><span class="val" id="maxSv"></span></div>
-      <input type="range" id="maxS" min="1" max="8" step="1" value="${c.max}">
-      <div class="field"><label>Rest after each combo</label><span class="val" id="restv"></span></div>
-      <input type="range" id="rest" min="1" max="15" step="0.5" value="${c.rest}">
-      <div class="field"><label>Gap between strikes</label><span class="val" id="gapv"></span></div>
-      <input type="range" id="gap" min="0" max="1" step="0.05" value="${c.gap}">
+    fields:[
+      {kind:'section', label:'Combo'},
+      {kind:'slider', key:'min',  label:'Shortest combo', min:1, max:6, step:1,
+       after:c=>{ if(c.max < c.min) c.max = c.min; }},
+      {kind:'slider', key:'max',  label:'Longest combo',  min:1, max:8, step:1,
+       after:c=>{ if(c.min > c.max) c.min = c.max; }},
+      {kind:'slider', key:'rest', label:'Rest after each combo', min:1, max:15, step:.5,
+       fmt:v=>v.toFixed(1)+'s'},
+      {kind:'slider', key:'gap',  label:'Gap between strikes', min:0, max:1, step:.05,
+       fmt:v=>v.toFixed(2)+'s'},
 
-      <h2 class="sec">Flow</h2>
-      <div class="chips" id="flow">
-        <button class="chip" data-f="library">Set combos</button>
-        <button class="chip" data-f="mixed">Mixed</button>
-        <button class="chip" data-f="free">Freestyle</button>
-      </div>
-      <p class="note">Set combos come from a list a coach would call. Freestyle builds new ones from which strikes actually feed into each other. Mixed alternates.</p>
+      {kind:'chips', key:'flow', label:'Flow',
+       options:[['library','Set combos'],['mixed','Mixed'],['free','Freestyle']]},
+      {kind:'note', text:'Set combos come from a list a coach would call. Freestyle builds new ones from which strikes actually feed into each other. Mixed alternates.'},
 
-      <h2 class="sec">Level</h2>
-      <div class="chips" id="level">
-        <button class="chip" data-l="1">Basics</button>
-        <button class="chip" data-l="2">Intermediate</button>
-        <button class="chip" data-l="3">Advanced</button>
-      </div>
+      {kind:'chips', key:'level', label:'Level', type:'number',
+       options:[[1,'Basics'],[2,'Intermediate'],[3,'Advanced']]},
 
-      <h2 class="sec">Techniques</h2>
-      <div class="chips" id="groups">
-        <button class="chip" data-g="punch">Punches</button>
-        <button class="chip" data-g="kick">Kicks</button>
-        <button class="chip" data-g="knee">Knees</button>
-        <button class="chip" data-g="elbow">Elbows</button>
-        <button class="chip" data-g="defense">Defense</button>
-      </div>
+      {kind:'multi', key:'groups', label:'Techniques', min:1,
+       options:[['punch','Punches'],['kick','Kicks'],['knee','Knees'],['elbow','Elbows'],['defense','Defense']]},
 
-      <h2 class="sec">Stance</h2>
-      <div class="chips" id="stance">
-        <button class="chip" data-s="orthodox">Orthodox</button>
-        <button class="chip" data-s="southpaw">Southpaw</button>
-      </div>
+      {kind:'chips', key:'stance', label:'Stance',
+       options:[['orthodox','Orthodox'],['southpaw','Southpaw']]},
 
-      <h2 class="sec">Rounds</h2>
-      <div class="chips" id="roundmode">
-        <button class="chip" data-r="on">Round timer</button>
-        <button class="chip" data-r="off">Endless</button>
-      </div>
-      <div class="field"><label>Round length</label><span class="val" id="rlenv"></span></div>
-      <input type="range" id="rlen" min="60" max="360" step="30" value="${c.roundLen}">
-      <div class="field"><label>Rest between rounds</label><span class="val" id="blenv"></span></div>
-      <input type="range" id="blen" min="15" max="180" step="15" value="${c.breakLen}">
-      <div class="field"><label>Rounds</label><span class="val" id="rnumv"></span></div>
-      <input type="range" id="rnum" min="1" max="12" step="1" value="${c.rounds}">`,
-    editorWire:(c, api)=>{
-      api.bind('minS','min', v=>v, v=>{ if(c.max < v){ el('maxS').value = v; el('maxSv').textContent = v; c.max = v; } });
-      api.bind('maxS','max', v=>v, v=>{ if(c.min > v){ el('minS').value = v; el('minSv').textContent = v; c.min = v; } });
-      api.bind('rest','rest', v=>v.toFixed(1)+'s');
-      api.bind('gap','gap', v=>v.toFixed(2)+'s');
-      api.bind('rlen','roundLen', v=>fmt(v));
-      api.bind('blen','breakLen', v=>fmt(v));
-      api.bind('rnum','rounds', v=>v);
-      api.chips('flow',      b=>b.dataset.f === c.flow,               b=>{ c.flow = b.dataset.f; });
-      api.chips('level',     b=>+b.dataset.l === c.level,             b=>{ c.level = +b.dataset.l; });
-      api.chips('stance',    b=>b.dataset.s === c.stance,             b=>{ c.stance = b.dataset.s; });
-      api.chips('roundmode', b=>(b.dataset.r === 'on') === c.useRounds, b=>{ c.useRounds = b.dataset.r === 'on'; });
-      api.chips('groups',    b=>c.groups[b.dataset.g], b=>{
-        const on = !!c.groups[b.dataset.g];
-        if(on && Object.values(c.groups).filter(Boolean).length === 1) return;
-        c.groups[b.dataset.g] = !on;
-      });
-    },
+      {kind:'chips', key:'useRounds', label:'Rounds', type:'boolean',
+       options:[[true,'Round timer'],[false,'Endless']]},
+      {kind:'slider', key:'roundLen', label:'Round length',        min:60, max:360, step:30, fmt:v=>fmt(v)},
+      {kind:'slider', key:'breakLen', label:'Rest between rounds', min:15, max:180, step:15, fmt:v=>fmt(v)},
+      {kind:'slider', key:'rounds',   label:'Rounds',              min:1,  max:12,  step:1},
+    ],
+
   },
-  run:{      name:'Running',        category:'physical', accent:'#B0561F', ink:'#FFFFFF', accentDark:'#E08145', inkDark:'#2A1408', kind:'timed',  blurb:'Distance, pace and splits'},
-  strength:{ name:'Strength',       category:'physical', accent:'#AE3C2C', ink:'#FFFFFF', accentDark:'#E07A6A', inkDark:'#2A100C', kind:'logged', blurb:'Sets, reps, push pull legs'},
+  run:{      name:'Running',        category:'physical', accent:'#FF7A2F', ink:'#1A1A1D', accentDark:'#E08145', inkDark:'#2A1408', kind:'timed',  blurb:'Distance, pace and splits'},
+  strength:{ name:'Strength',       category:'physical', accent:'#FF5A4D', ink:'#1A1A1D', accentDark:'#E07A6A', inkDark:'#2A100C', kind:'logged', blurb:'Sets, reps, push pull legs'},
   meditate:{
-    name:'Meditation', category:'mental', accent:'#2E7A6F', ink:'#FFFFFF', accentDark:'#79A9A0', inkDark:'#0F1E1C',
+    name:'Meditation', category:'mental', accent:'#12BFA6', ink:'#1A1A1D', accentDark:'#79A9A0', inkDark:'#0F1E1C',
     ready:true, kind:'timed', blurb:'Timer, intervals and bowl',
     line:s=>(s.detail && s.detail.completed) ? 'Sat the full length' : 'Ended early',
     defaults:()=>({length:15, taps:5, spacing:2.2, interval:0, volume:.6, dim:true}),
@@ -721,45 +689,30 @@ const TYPES = {
       [c.interval ? c.interval+' min' : 'None', 'Interval bell'],
       [done, 'Times done']
     ],
-    editorHTML:c=>`
-      <h2 class="sec">Sitting</h2>
-      <div class="field"><label>Length</label><span class="val" id="mlenv"></span></div>
-      <input type="range" id="mlen" min="1" max="90" step="1" value="${c.length}">
-      <p class="note">The timer starts after the opening bowl finishes, so you get the full sit.</p>
+    fields:[
+      {kind:'section', label:'Sitting'},
+      {kind:'slider', key:'length', label:'Length', min:1, max:90, step:1, fmt:v=>v+' min'},
+      {kind:'note', text:'The timer starts after the opening bowl finishes, so you get the full sit.'},
 
-      <h2 class="sec">Interval bell</h2>
-      <div class="chips" id="minterval">
-        ${[0,2,5,10,15].map(v=>`<button class="chip" data-i="${v}">${v?v+' min':'Off'}</button>`).join('')}
-      </div>
-      <p class="note">A single tap at that spacing, to re-anchor without ending the sit.</p>
+      {kind:'chips', key:'interval', label:'Interval bell', type:'number',
+       options:[[0,'Off'],[2,'2 min'],[5,'5 min'],[10,'10 min'],[15,'15 min']]},
+      {kind:'note', text:'A single tap at that spacing, to re-anchor without ending the sit.'},
 
-      <h2 class="sec">Bowl</h2>
-      <div class="field"><label>Taps at each end</label><span class="val" id="mtapsv"></span></div>
-      <input type="range" id="mtaps" min="1" max="7" step="1" value="${c.taps}">
-      <div class="field"><label>Spacing between taps</label><span class="val" id="mspacev"></span></div>
-      <input type="range" id="mspace" min="1" max="4" step="0.1" value="${c.spacing}">
-      <div class="field"><label>Volume</label><span class="val" id="mvolv"></span></div>
-      <input type="range" id="mvol" min="0.1" max="1" step="0.05" value="${c.volume}">
-      <button class="ghost" id="mtest">Hear the bowl</button>
+      {kind:'section', label:'Bowl'},
+      {kind:'slider', key:'taps',    label:'Taps at each end',       min:1, max:7, step:1},
+      {kind:'slider', key:'spacing', label:'Spacing between taps',   min:1, max:4, step:.1, fmt:v=>v.toFixed(1)+'s'},
+      {kind:'slider', key:'volume',  label:'Volume', min:.1, max:1, step:.05, fmt:v=>Math.round(v*100)+'%'},
+      {kind:'action', id:'mtest', label:'Hear the bowl',
+       onClick:c=>{ ensureAudio(); bowl(actx.currentTime + .05, c.volume, null); }},
 
-      <h2 class="sec">Screen</h2>
-      <div class="chips" id="mdim">
-        <button class="chip" data-d="on">Dim</button>
-        <button class="chip" data-d="off">Show timer</button>
-      </div>
-      <p class="note">Dim fades the clock almost out so it does not pull at you. Tap the screen to check the time.</p>`,
-    editorWire:(c, api)=>{
-      api.bind('mlen','length', v=>v+' min');
-      api.bind('mtaps','taps', v=>v);
-      api.bind('mspace','spacing', v=>v.toFixed(1)+'s');
-      api.bind('mvol','volume', v=>Math.round(v*100)+'%');
-      api.chips('minterval', b=>+b.dataset.i === c.interval, b=>{ c.interval = +b.dataset.i; });
-      api.chips('mdim', b=>(b.dataset.d === 'on') === c.dim, b=>{ c.dim = b.dataset.d === 'on'; });
-      el('mtest').addEventListener('click', ()=>{ ensureAudio(); bowl(actx.currentTime + .05, c.volume, null); });
-    },
+      {kind:'chips', key:'dim', label:'Screen', type:'boolean',
+       options:[[true,'Dim'],[false,'Show timer']]},
+      {kind:'note', text:'Dim fades the clock almost out so it does not pull at you. Tap the screen to check the time.'},
+    ],
+
   },
-  journal:{  name:'Journaling',     category:'mental',   accent:'#4E51B0', ink:'#FFFFFF', accentDark:'#9490DC', inkDark:'#14122A', kind:'written',blurb:'Daily writing'},
-  cbt:{      name:'Thought record', category:'mental',   accent:'#31679C', ink:'#FFFFFF', accentDark:'#7CACD4', inkDark:'#0D1928', kind:'written',blurb:'CBT worksheets'},
+  journal:{  name:'Journaling',     category:'mental',   accent:'#6C5CE7', ink:'#FFFFFF', accentDark:'#9490DC', inkDark:'#14122A', kind:'written',blurb:'Daily writing'},
+  cbt:{      name:'Thought record', category:'mental',   accent:'#2E9BF0', ink:'#1A1A1D', accentDark:'#7CACD4', inkDark:'#0D1928', kind:'written',blurb:'CBT worksheets'},
 };
 const typeOf = id => TYPES[id] || TYPES.muaythai;
 const summaryOf = ex => ex.logOnly ? 'Logged by hand'
@@ -1234,6 +1187,85 @@ el('exerciseDetail').addEventListener('click', e=>{
 });
 
 /* ══ screen: editor ════════════════════════════════════════════ */
+/* ══ fields ═════════════════════════════════════════════════════
+   A type describes its settings as data and the shell renders and
+   wires them. Nothing type-specific builds a slider or a chip group
+   by hand, so every editor looks and behaves the same, and a new
+   type mostly declares rather than builds.
+
+   kinds: section · note · slider · chips · multi · action
+   ═══════════════════════════════════════════════════════════════ */
+const fieldId = f => 'f-' + f.key;
+
+function fieldsHTML(defs, cfg){
+  return defs.map(f=>{
+    if(f.kind === 'section') return `<h2 class="sec">${esc(f.label)}</h2>`;
+    if(f.kind === 'note')    return `<p class="note">${f.html || esc(f.text || '')}</p>`;
+    if(f.kind === 'action')  return `<button class="ghost" id="${esc(f.id)}">${esc(f.label)}</button>`;
+    if(f.kind === 'slider')  return `
+      <div class="field"><label>${esc(f.label)}</label><span class="val" id="${fieldId(f)}v"></span></div>
+      <input type="range" id="${fieldId(f)}" min="${f.min}" max="${f.max}" step="${f.step}" value="${cfg[f.key]}">`;
+    if(f.kind === 'chips' || f.kind === 'multi') return `
+      ${f.label ? `<h2 class="sec">${esc(f.label)}</h2>` : ''}
+      <div class="chips" id="${fieldId(f)}">${f.options.map(o=>
+        `<button class="chip" data-v="${esc(String(o[0]))}">${esc(o[1])}</button>`).join('')}</div>`;
+    return '';
+  }).join('');
+}
+
+function wireFields(defs, cfg, onChange){
+  const painters = [];
+  const repaint = ()=>painters.forEach(p=>p());
+  const changed = ()=>{ repaint(); onChange && onChange(); };
+
+  defs.forEach(f=>{
+    if(f.kind === 'slider'){
+      const input = el(fieldId(f)), out = el(fieldId(f)+'v');
+      const paint = ()=>{ input.value = cfg[f.key]; out.textContent = f.fmt ? f.fmt(cfg[f.key]) : cfg[f.key]; };
+      painters.push(paint); paint();
+      input.addEventListener('input', ()=>{
+        cfg[f.key] = parseFloat(input.value);
+        if(f.after) f.after(cfg, cfg[f.key]);
+        changed();
+      });
+    }
+    if(f.kind === 'chips'){
+      const box = el(fieldId(f));
+      const val = () => f.type === 'number' ? Number(cfg[f.key]) : cfg[f.key];
+      painters.push(()=>[...box.children].forEach(b=>
+        b.setAttribute('aria-pressed', String(f.type === 'number'
+          ? Number(b.dataset.v) === val()
+          : String(b.dataset.v) === String(val())))));
+      box.addEventListener('click', e=>{
+        const b = e.target.closest('.chip'); if(!b) return;
+        cfg[f.key] = f.type === 'number' ? Number(b.dataset.v)
+                   : f.type === 'boolean' ? b.dataset.v === 'true'
+                   : b.dataset.v;
+        if(f.after) f.after(cfg, cfg[f.key]);
+        changed();
+      });
+    }
+    if(f.kind === 'multi'){
+      const box = el(fieldId(f));
+      painters.push(()=>[...box.children].forEach(b=>
+        b.setAttribute('aria-pressed', String(!!cfg[f.key][b.dataset.v]))));
+      box.addEventListener('click', e=>{
+        const b = e.target.closest('.chip'); if(!b) return;
+        const on = !!cfg[f.key][b.dataset.v];
+        /* never let the last one be switched off */
+        if(on && Object.values(cfg[f.key]).filter(Boolean).length <= (f.min || 1)) return;
+        cfg[f.key][b.dataset.v] = !on;
+        changed();
+      });
+    }
+    if(f.kind === 'action'){
+      el(f.id).addEventListener('click', ()=>f.onClick(cfg));
+    }
+  });
+  repaint();
+  return {repaint};
+}
+
 function openEditor(source, isNew){
   /* Edits go into a working copy. Nothing reaches the stored list
      until Save, so backing out of a new exercise leaves nothing
@@ -1260,6 +1292,7 @@ function openEditor(source, isNew){
     <p class="note">${ex.logOnly
       ? 'For training that happens away from the phone — a class, a session with a coach. It keeps its own history and streak, you just enter it afterwards.'
       : 'The app runs this one and records what happened.'}</p>
+    ${ex.logOnly ? '' : (t.fields ? fieldsHTML(t.fields, c) : '')}
     ${ex.logOnly ? '' : (t.editorHTML ? t.editorHTML(c) : '')}
     <button class="primary" id="saveEx" style="margin-top:30px">${isNew ? 'Save exercise' : 'Save changes'}</button>
     <button class="ghost" id="cancelEx">${isNew ? 'Discard' : 'Discard changes'}</button>`;
@@ -1302,6 +1335,7 @@ function openEditor(source, isNew){
       });
     }
   };
+  if(!ex.logOnly && t.fields) wireFields(t.fields, c);
   if(!ex.logOnly && t.editorWire) t.editorWire(c, api);
 
   el('rname').addEventListener('input', ev=>{
@@ -1939,6 +1973,16 @@ function typeBreakdown(list){
       <span class="amt">${hhmm(r.sec)}</span>
     </div>`).join('') + `</div>`;
 }
+/* Opening a past session always means editing it, never just viewing.
+   A type that records something the shell cannot understand — sets,
+   written text — supplies its own editor; everything else gets the
+   generic time-and-note form. A session with no detail has nothing
+   type-specific to edit, so it uses the generic form too. */
+function editSession(s){
+  const t = typeOf(s.type);
+  if(t.editSession && s.detail) return t.editSession(s);
+  return openLog(null, s);
+}
 function sessionLine(s){
   if(s.source === 'manual'){
     const bits = [];
@@ -2059,7 +2103,7 @@ function renderStats(){
 el('statBody').addEventListener('click', e=>{
   const b = e.target.closest('[data-sid]'); if(!b) return;
   const s = sessions.find(x=>String(x.start) === b.dataset.sid);
-  if(s) openLog(null, s);
+  if(s) editSession(s);
 });
 el('statTabs').addEventListener('click', e=>{
   const b = e.target.closest('.chip'); if(!b) return;
@@ -2381,6 +2425,11 @@ el('test').addEventListener('click', ()=>{
 
 
 
+
+
+
+
+
 /* ╔══════════════════════════════════════════════════════════════╗
    ║  STRENGTH MODULE — START                                     ║
    ║  Fully self-contained: injects its own styles and screens,    ║
@@ -2507,7 +2556,7 @@ css.textContent = `
   .liftHead{display:flex;align-items:baseline;gap:10px;margin-bottom:4px;}
   .liftHead .nm{font-family:var(--display);font-weight:700;text-transform:uppercase;font-size:19px;line-height:1.1;flex:1;}
   .liftHead .grp{font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;font-size:10px;color:var(--text-dim);}
-  .restPill{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:20px;padding:6px 13px;font-family:var(--mono);font-size:12px;color:var(--accent);margin:8px 0 14px;}
+  .restPill{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:20px;padding:6px 13px;font-family:var(--mono);font-size:12px;color:var(--text);margin:8px 0 14px;}
   .setGrid{display:grid;grid-template-columns:22px 1fr 56px 72px 30px;gap:7px 6px;align-items:center;}
   .setGrid .hd{font-family:var(--display);text-transform:uppercase;letter-spacing:.1em;font-size:10px;color:var(--text-dim);padding-bottom:3px;}
   .setGrid .sn{font-family:var(--mono);font-size:13px;color:var(--text-dim);}
@@ -2539,7 +2588,7 @@ css.textContent = `
     display:none;align-items:center;gap:14px;
   }
   .restBar.on{display:flex;}
-  .restBar .t{font-family:var(--mono);font-size:26px;color:var(--accent);font-variant-numeric:tabular-nums;}
+  .restBar .t{font-family:var(--mono);font-size:26px;color:var(--text);font-variant-numeric:tabular-nums;}
   .restBar .n{flex:1;font-size:13px;color:var(--text-dim);}
   .restBar button{font-family:var(--display);text-transform:uppercase;letter-spacing:.12em;font-size:12px;color:var(--text-dim);border:1px solid var(--line);border-radius:2px;padding:9px 13px;}
   .pickSearch{margin-bottom:16px;}
@@ -2721,17 +2770,19 @@ function priorText(prior, idx, m){
 }
 
 /* ── the workout editor ───────────────────────────────────── */
+T.fields = [
+  {kind:'section', label:'Default rest'},
+  {kind:'slider', key:'rest', label:'Between sets', min:15, max:300, step:15, fmt:v=>v+'s'},
+];
+/* The movement list is dynamic — it grows, reorders and deletes — so
+   it stays hand-built rather than being forced into a field. */
 T.editorHTML = c => `
-  <h2 class="sec">Default rest</h2>
-  <div class="field"><label>Between sets</label><span class="val" id="lrestv"></span></div>
-  <input type="range" id="lrest" min="15" max="300" step="15" value="${c.rest}">
   <h2 class="sec">Movements</h2>
   <p class="nmNote" id="mvHint" hidden></p>
   <div id="liftItems"></div>
   <button class="addbtn" id="addMove">+ Add movement</button>`;
 
 T.editorWire = (c, api) => {
-  api.bind('lrest','rest', v=>v+'s');
   const paint = ()=>{
     el('liftItems').innerHTML = c.items.length ? c.items.map((it,i)=>{
       const m = moveOf(it.movementId);
@@ -2907,7 +2958,41 @@ T.logPastLabel = 'Log a past workout';
 T.logPast = function(){ openLift(true); };
 T.open = function(){ openLift(false); };
 
+/* Editing a logged workout rebuilds the table from what was RECORDED,
+   not from the exercise as it stands now. A workout logged at five
+   sets stays five sets even if the template has since become three. */
+let editingLift = null;
+function openLiftEdit(sess){
+  const owner = exercises.find(e=>e.id === sess.exerciseId);
+  if(owner) cur = owner;
+  editingLift = sess;
+  liftStart = sess.start;
+  draft = {
+    exerciseId: sess.exerciseId, start: sess.start, autofill:false,
+    backdate:true, editing:true,
+    mins: Math.max(1, Math.round((sess.dur || 0)/60)),
+    items: (sess.detail.items || []).map(it=>{
+      const m = moveOf(it.movementId);
+      return {
+        movementId: it.movementId,
+        name: it.name || m.name,
+        rest: (cur && cur.cfg && cur.cfg.rest) || 90,
+        sets: it.sets.map(st=>({
+          reps: st.reps == null ? '' : String(st.reps),
+          load: fromLb(st.load),
+          level: st.level || null,
+          done: true
+        }))
+      };
+    })
+  };
+  renderLift(); show('lift');
+  el('title').textContent = 'Edit workout';
+}
+T.editSession = sess => openLiftEdit(sess);
+
 function openLift(backdate){
+  editingLift = null;
   const c = cur.cfg;
   if(!c.items || !c.items.length){
     openEditor(cur, false);
@@ -2950,8 +3035,9 @@ function openLift(backdate){
 }
 const K_PAST = 'practice.liftpast.v1';
 const saveDraft = ()=>{
-  if(draft) draft.touched = Date.now();   // so a resume knows how long you were away
-  write(draft && draft.backdate ? K_PAST : K_DRAFT, draft);
+  if(!draft || draft.editing) return;     // an edit is committed on Save, not autosaved
+  draft.touched = Date.now();             // so a resume knows how long you were away
+  write(draft.backdate ? K_PAST : K_DRAFT, draft);
 };
 
 function renderLift(){
@@ -3008,12 +3094,12 @@ function renderLift(){
       <button class="chip" id="autofill" aria-pressed="${draft.autofill}">${draft.autofill?'On':'Off'}</button>
     </div>
     ${cards}
-    <button class="primary" id="finishLift" style="margin-top:26px">${draft.backdate ? 'Save workout' : 'Finish workout'}</button>
+    <button class="primary" id="finishLift" style="margin-top:26px">${draft.editing ? 'Save changes' : draft.backdate ? 'Save workout' : 'Finish workout'}</button>
     ${draft.backdate ? '' : `<button class="ghost" id="pauseLift">${paused ? 'Resume' : 'Pause'}</button>`}
-    ${draft.backdate ? `<button class="ghost" id="timeInstead">Don't remember the numbers? Log the time instead</button>` : ''}
-    <button class="ghost danger" id="cancelLift">Discard</button>`;
+    ${draft.backdate && !draft.editing ? `<button class="ghost" id="timeInstead">Don't remember the numbers? Log the time instead</button>` : ''}
+    <button class="ghost danger" id="cancelLift">${draft.editing ? 'Delete workout' : 'Discard'}</button>`;
 
-  if(draft.backdate){
+  if(draft.backdate && !draft.editing){
     el('timeInstead').addEventListener('click', ()=>{
       /* Hand the entry to the duration form instead. The half-filled
          table is dropped on purpose — it is being replaced, not lost
@@ -3096,12 +3182,21 @@ el('liftBody').addEventListener('click', e=>{
   const cancel = e.target.closest('#cancelLift');
   if(cancel){
     if(cancel.dataset.armed !== '1'){
-      cancel.dataset.armed = '1'; cancel.textContent = 'Tap again to discard';
-      setTimeout(()=>{ cancel.dataset.armed='0'; cancel.textContent='Discard'; }, 4000);
+      const word = (draft && draft.editing) ? 'delete' : 'discard';
+      cancel.dataset.armed = '1'; cancel.textContent = 'Tap again to ' + word;
+      setTimeout(()=>{ cancel.dataset.armed='0';
+        cancel.textContent = (draft && draft.editing) ? 'Delete workout' : 'Discard'; }, 4000);
       return;
     }
     stopRest(); stopElapsed(); resetPause();
-    write(draft && draft.backdate ? K_PAST : K_DRAFT, null); draft = null;
+    if(draft && draft.editing && editingLift){
+      sessions = sessions.filter(x=>x !== editingLift);
+      saveSessions(); renderStats(); renderHome();
+      editingLift = null;
+    } else {
+      write(draft && draft.backdate ? K_PAST : K_DRAFT, null);
+    }
+    draft = null;
     openExercise(cur.id);
   }
 });
@@ -3203,6 +3298,21 @@ function finishLift(){
   const start = back ? draft.start : liftStart;
   const end = start + dur*1000;
 
+  if(items.length && editingLift){
+    const [y,mo,da] = (el('pastDate') ? el('pastDate').value : '').split('-').map(Number);
+    const [hh,mi]   = (el('pastTime') ? el('pastTime').value : '').split(':').map(Number);
+    const start = (y && !isNaN(hh)) ? new Date(y, mo-1, da, hh, mi).getTime() : editingLift.start;
+    const mins  = el('pastLen') ? +el('pastLen').value : Math.round((editingLift.dur||0)/60);
+    editingLift.start = start;
+    editingLift.end = start + mins*60000;
+    editingLift.dur = mins*60;
+    editingLift.detail = { items, volume:volumeOf(items), unit:'lb',
+                           sets:items.reduce((n,i)=>n+i.sets.length,0) };
+    saveSessions(); renderStats(); renderHome();
+    editingLift = null; draft = null;
+    stopRest(); stopElapsed();
+    return cur ? openExercise(cur.id) : show('home');
+  }
   if(items.length){
     lastDiscard = 0;
     commitSession(makeSession(cur, {
@@ -3260,6 +3370,23 @@ css.textContent = `
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
   }
   .entryRow .peek.none{color:var(--text-dim);font-style:italic;}
+  .writeTimer{
+    display:flex;align-items:center;gap:12px;margin:0 0 14px;
+  }
+  .writeTimer .lab{
+    font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;
+    font-size:11px;color:var(--text-dim);flex:none;
+  }
+  .writeTimer input[type=range]{flex:1;height:26px;}
+  .writeTimer .amt{
+    font-family:var(--mono);font-size:14px;width:62px;text-align:right;flex:none;
+  }
+  .writeTimer button{
+    border:1px solid var(--line);border-radius:2px;padding:8px 12px;
+    font-family:var(--display);text-transform:uppercase;letter-spacing:.1em;
+    font-size:12px;font-weight:600;flex:none;
+  }
+  .writeTimer button.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent);}
 `;
 document.head.appendChild(css);
 
@@ -3275,6 +3402,12 @@ sec.innerHTML = `
   </div>
   <div class="scroll writeWrap">
     <p class="writeMeta" id="writeWhen"></p>
+    <div class="writeTimer">
+      <span class="lab">Write for</span>
+      <input type="range" id="writeMins" min="0" max="60" step="5" value="0">
+      <span class="amt" id="writeMinsV">Off</span>
+      <button id="writeTimerGo" hidden>Start</button>
+    </div>
     <textarea id="writeText" placeholder="Write."></textarea>
     <button class="primary" id="writeSave" style="margin-top:16px">Save entry</button>
     <button class="ghost danger" id="writeDel" hidden>Delete entry</button>
@@ -3286,6 +3419,7 @@ TITLES.write = 'Journal';
 const K_DRAFT = 'practice.writedraft.v1';
 let editingEntry = null;   // the session being edited, or null for a new one
 let entryStart = 0;
+let writeTick = null, writeEndsAt = 0;
 
 const words = t => (String(t||'').trim().match(/\S+/g) || []).length;
 const stamp = ms => new Date(ms).toLocaleString([], {
@@ -3299,7 +3433,7 @@ const entriesFor = exId => sessions
 Object.assign(J, {
   ready:true, kind:'written',
   blurb:'A blank page, kept by date',
-  defaults:()=>({}),
+  defaults:()=>({timer:0}),
   summary:()=>'Blank page',
   facts:(c, done)=>{
     const mine = cur ? entriesFor(cur.id) : [];
@@ -3311,7 +3445,7 @@ Object.assign(J, {
   },
   /* Nothing to configure — a journal is a blank page. The shell still
      offers name, schedule and log-only above this. */
-  editorHTML:()=>'',
+  fields:[],
   line:s => {
     const t = (s.detail && s.detail.text || '').trim();
     if(!t) return '';
@@ -3320,6 +3454,7 @@ Object.assign(J, {
   },
   logPastLabel:'Log a paper entry',
   open:()=>openWrite(null),
+  editSession:s=>openWrite(s),
 });
 
 /* ── writing ─────────────────────────────────────────────────── */
@@ -3338,9 +3473,55 @@ function openWrite(existing){
   el('writeDel').hidden = !existing;
   el('writeDel').dataset.armed = '0';
   el('writeDel').textContent = 'Delete entry';
+  stopWriteTimer();
+  const mins = (cur && cur.cfg && cur.cfg.timer) || 0;
+  el('writeMins').value = mins;
+  paintMins();
   show('write');
   setTimeout(()=>{ try{ el('writeText').focus(); }catch(e){} }, 60);
 }
+
+/* A soft limit rather than a countdown you have to obey — the bowl
+   rings, nothing is submitted, and the writing carries on if it wants to. */
+function paintMins(){
+  const v = +el('writeMins').value;
+  el('writeMinsV').textContent = v ? v + ' min' : 'Off';
+  el('writeTimerGo').hidden = !v || !!writeTick;
+  el('writeTimerGo').textContent = 'Start';
+  el('writeTimerGo').classList.remove('on');
+}
+function stopWriteTimer(){
+  clearInterval(writeTick); writeTick = null;
+  const b = el('writeTimerGo');
+  if(b){ b.classList.remove('on'); b.textContent = 'Start'; }
+}
+function startWriteTimer(){
+  const v = +el('writeMins').value;
+  if(!v) return;
+  writeEndsAt = Date.now() + v*60000;
+  const b = el('writeTimerGo');
+  b.hidden = false; b.classList.add('on');
+  clearInterval(writeTick);
+  const paint = ()=>{
+    const left = Math.max(0, Math.round((writeEndsAt - Date.now())/1000));
+    b.textContent = fmt(left);
+    if(left <= 0){
+      stopWriteTimer();
+      b.textContent = 'Time';
+      try{ ensureAudio(); bowl(actx.currentTime + 0.05, 0.6, null); }catch(e){}
+    }
+  };
+  paint();
+  writeTick = setInterval(paint, 250);
+}
+el('writeMins').addEventListener('input', ()=>{
+  if(cur && cur.cfg){ cur.cfg.timer = +el('writeMins').value; saveEx(); }
+  if(writeTick) stopWriteTimer();
+  paintMins();
+});
+el('writeTimerGo').addEventListener('click', ()=>{
+  writeTick ? (stopWriteTimer(), paintMins()) : startWriteTimer();
+});
 
 el('writeText').addEventListener('input', ()=>{
   if(editingEntry) return;                 // edits commit on Save, not per keystroke
@@ -3360,6 +3541,7 @@ el('writeSave').addEventListener('click', ()=>{
     }));
     write(K_DRAFT, null);
   }
+  stopWriteTimer();
   editingEntry = null;
   cur ? openExercise(cur.id) : show('home');
 });
@@ -3373,6 +3555,7 @@ el('writeDel').addEventListener('click', ()=>{
   }
   sessions = sessions.filter(s => s !== editingEntry);
   saveSessions(); renderStats(); renderHome();
+  stopWriteTimer();
   editingEntry = null;
   cur ? openExercise(cur.id) : show('home');
 });
@@ -3380,6 +3563,7 @@ el('writeDel').addEventListener('click', ()=>{
 el('writeQuit').addEventListener('click', ()=>{
   /* An unfinished new entry stays in the draft, so leaving never
      loses writing. An edit simply reverts. */
+  stopWriteTimer();
   editingEntry = null;
   cur ? openExercise(cur.id) : show('home');
 });
@@ -3403,7 +3587,7 @@ document.addEventListener('click', e=>{
   const b = e.target.closest('[data-entry]');
   if(!b || screen !== 'exercise') return;
   const s = sessions.find(x => String(x.start) === b.dataset.entry);
-  if(s) openWrite(s);
+  if(s) editSession(s);
 });
 })();
 /* ╔══════════════════════════════════════════════════════════════╗
