@@ -574,7 +574,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '5.7';
+const APP_VERSION = '5.8';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -2185,7 +2185,13 @@ function openLog(exId, existing){
       <div><input type="time" id="logTime" value="${timeVal(when)}"></div>
     </div>
 
-    ${written ? '' : `<h2 class="sec">How long</h2>
+    <h2 class="sec">How long</h2>
+    <div class="chips" id="logQuick">
+      ${(written ? [5,10,15,20,30] : [15,30,45,60,90]).map(v=>`<button class="chip" data-q="${v}">${v} min</button>`).join('')}
+    </div>
+    <div class="field" style="margin-top:12px"><label>Duration</label><span class="val" id="logDurv"></span></div>
+    <input type="range" id="logDur" min="${written ? 1 : 5}" max="${written ? 120 : 240}" step="5" value="${Math.min(240, Math.max(5, Math.round(mins/5)*5))}">
+    ${written ? '' : `
     <div class="chips" id="logQuick">
       ${[15,30,45,60,90].map(v=>`<button class="chip" data-q="${v}">${v} min</button>`).join('')}
     </div>
@@ -2211,24 +2217,24 @@ function openLog(exId, existing){
       const b = e.target.closest('.chip'); if(!b) return;
       effort = b.dataset.e; paintEffort();
     });
-    const dur = el('logDur'), durOut = el('logDurv');
-    const syncDur = ()=>{
-      durOut.textContent = fmt(+dur.value * 60);
-      setChips('logQuick', b=>+b.dataset.q === +dur.value);
-    };
-    dur.addEventListener('input', syncDur); syncDur();
-    el('logQuick').addEventListener('click', e=>{
-      const b = e.target.closest('.chip'); if(!b) return;
-      dur.value = b.dataset.q; syncDur();
-    });
   }
+  const dur = el('logDur'), durOut = el('logDurv');
+  const syncDur = ()=>{
+    durOut.textContent = fmt(+dur.value * 60);
+    setChips('logQuick', b=>+b.dataset.q === +dur.value);
+  };
+  dur.addEventListener('input', syncDur); syncDur();
+  el('logQuick').addEventListener('click', e=>{
+    const b = e.target.closest('.chip'); if(!b) return;
+    dur.value = b.dataset.q; syncDur();
+  });
 
   el('logSave').addEventListener('click', ()=>{
     const [y,mo,d] = el('logDate').value.split('-').map(Number);
     const [hh,mm] = el('logTime').value.split(':').map(Number);
     if(!y || isNaN(hh)) return;
     const start = new Date(y, mo-1, d, hh, mm).getTime();
-    const minutes = written ? 0 : +el('logDur').value;
+    const minutes = +el('logDur').value;
     const ex = exercises.find(x=>x.id === el('logEx').value) || (existing ? null : pool[0]);
     const note = el('logNote').value.trim();
 
@@ -2404,6 +2410,8 @@ el('test').addEventListener('click', ()=>{
     note.textContent = 'Listening for output…';
   }catch(e){ note.textContent = 'Speech is unavailable in this browser.'; }
 });
+
+
 
 
 
@@ -3421,6 +3429,29 @@ let editingEntry = null;   // the session being edited, or null for a new one
 let entryStart = 0;
 let writeTick = null, writeEndsAt = 0;
 
+/* Time worked, the same rule the timed types follow. The clock accrues
+   while you are typing and stops itself after a stretch of nothing, so
+   a draft left open overnight records the writing, not the night. */
+const IDLE_AFTER = 45000;
+let wrote = 0, lastKey = 0, idleTick = null, whenTick = null;
+
+function beginWriting(){
+  const now = Date.now();
+  if(lastKey && now - lastKey < IDLE_AFTER) wrote += now - lastKey;
+  lastKey = now;
+  clearTimeout(idleTick);
+  idleTick = setTimeout(()=>{ lastKey = 0; }, IDLE_AFTER);
+}
+function writtenSecs(){
+  const now = Date.now();
+  const tail = (lastKey && now - lastKey < IDLE_AFTER) ? now - lastKey : 0;
+  return Math.round((wrote + tail)/1000);
+}
+function resetWriting(prev){
+  wrote = (prev || 0) * 1000; lastKey = 0;
+  clearTimeout(idleTick); idleTick = null;
+}
+
 const words = t => (String(t||'').trim().match(/\S+/g) || []).length;
 const stamp = ms => new Date(ms).toLocaleString([], {
   weekday:'long', month:'short', day:'numeric', hour:'numeric', minute:'2-digit'
@@ -3467,6 +3498,12 @@ function openWrite(existing){
 
   el('writeName').textContent = cur ? cur.name : 'Journal';
   el('writeWhen').textContent = stamp(entryStart);
+  clearInterval(whenTick);
+  whenTick = setInterval(()=>{
+    if(screen !== 'write') return;
+    const s = writtenSecs();
+    el('writeWhen').textContent = stamp(entryStart) + (s >= 30 ? '  ·  ' + fmt(s) + ' writing' : '');
+  }, 1000);
   el('writeText').value = existing ? (existing.detail && existing.detail.text || '')
                         : (resumed ? resumed.text : '');
   el('writeSave').textContent = existing ? 'Save changes' : 'Save entry';
@@ -3474,6 +3511,8 @@ function openWrite(existing){
   el('writeDel').dataset.armed = '0';
   el('writeDel').textContent = 'Delete entry';
   stopWriteTimer();
+  /* editing an old entry keeps the time it already holds */
+  resetWriting(existing ? existing.dur : (resumed ? resumed.wrote : 0));
   const mins = (cur && cur.cfg && cur.cfg.timer) || 0;
   el('writeMins').value = mins;
   paintMins();
@@ -3524,24 +3563,30 @@ el('writeTimerGo').addEventListener('click', ()=>{
 });
 
 el('writeText').addEventListener('input', ()=>{
+  beginWriting();
   if(editingEntry) return;                 // edits commit on Save, not per keystroke
-  write(K_DRAFT, {exerciseId: cur && cur.id, start: entryStart, text: el('writeText').value});
+  write(K_DRAFT, {exerciseId: cur && cur.id, start: entryStart,
+                  text: el('writeText').value, wrote: writtenSecs()});
 });
 
 el('writeSave').addEventListener('click', ()=>{
   const text = el('writeText').value.trim();
   if(!text){ el('writeText').focus(); return; }
+  const secs = writtenSecs();
   if(editingEntry){
     editingEntry.detail = {text, words: words(text)};
+    editingEntry.dur = secs;
+    editingEntry.end = editingEntry.start + secs*1000;
     saveSessions(); renderStats(); renderHome();
   } else {
     commitSession(makeSession(cur, {
-      start: entryStart, end: Date.now(), dur: 0, source:'app',
+      start: entryStart, dur: secs, source:'app',
       detail: {text, words: words(text)}
     }));
     write(K_DRAFT, null);
   }
-  stopWriteTimer();
+  resetWriting(0);
+  stopWriteTimer(); clearInterval(whenTick);
   editingEntry = null;
   cur ? openExercise(cur.id) : show('home');
 });
@@ -3555,7 +3600,7 @@ el('writeDel').addEventListener('click', ()=>{
   }
   sessions = sessions.filter(s => s !== editingEntry);
   saveSessions(); renderStats(); renderHome();
-  stopWriteTimer();
+  stopWriteTimer(); clearInterval(whenTick);
   editingEntry = null;
   cur ? openExercise(cur.id) : show('home');
 });
@@ -3563,7 +3608,7 @@ el('writeDel').addEventListener('click', ()=>{
 el('writeQuit').addEventListener('click', ()=>{
   /* An unfinished new entry stays in the draft, so leaving never
      loses writing. An edit simply reverts. */
-  stopWriteTimer();
+  stopWriteTimer(); clearInterval(whenTick);
   editingEntry = null;
   cur ? openExercise(cur.id) : show('home');
 });
