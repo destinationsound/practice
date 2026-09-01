@@ -116,7 +116,6 @@
     font-size:11px;color:var(--text-dim);margin:-12px 0 20px;
   }
   .adh b{font-family:var(--mono);letter-spacing:0;color:var(--text);font-weight:400;}
-  .cal i.plan{border-style:dashed;border-color:var(--text-dim);}
   .row.dim .go{font-size:10px;font-family:var(--display);letter-spacing:.14em;text-transform:uppercase;}
   .nothing{color:var(--text-dim);font-size:13px;padding:16px 0;border-bottom:1px solid var(--line);}
 
@@ -206,14 +205,6 @@
   .axis span{flex:1;text-align:center;font-family:var(--display);font-size:11px;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;}
   .key{display:flex;gap:16px;margin-bottom:24px;font-size:12px;color:var(--text-dim);}
   .key i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;}
-  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:22px;}
-  .cal span.hd{font-family:var(--display);font-size:10px;color:var(--text-dim);text-align:center;letter-spacing:.06em;padding-bottom:3px;}
-  .cal i{position:relative;overflow:hidden;aspect-ratio:1;border:1px solid var(--line);border-radius:2px;display:flex;align-items:flex-start;justify-content:flex-end;padding:3px 4px;font-family:var(--mono);font-size:9px;font-style:normal;color:var(--text-dim);}
-  .cal i span{position:relative;z-index:1;}
-  .cal i u{position:absolute;left:0;right:0;bottom:0;text-decoration:none;}
-  .cal i.blank{border-color:transparent;}
-  .cal i.hit{color:var(--text);font-weight:600;}
-  .cal i.today{border-color:var(--brand);border-width:2px;}
   .sess{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid var(--line);}
   .sess .when{font-size:14px;}
   .sess .when small{display:block;color:var(--text-dim);font-size:12px;margin-top:3px;}
@@ -260,10 +251,11 @@
 
   <section class="screen" id="s-stats"><div class="scroll">
     <div class="chips" id="statTabs">
-      <button class="chip" data-v="day" aria-pressed="false">Day</button>
-      <button class="chip" data-v="week" aria-pressed="true">Week</button>
-      <button class="chip" data-v="month" aria-pressed="false">Month</button>
+      <button class="chip" data-v="days" aria-pressed="true">Days</button>
+      <button class="chip" data-v="weeks" aria-pressed="false">Weeks</button>
+      <button class="chip" data-v="months" aria-pressed="false">Months</button>
     </div>
+    <select id="statType" style="margin-top:12px"></select>
     <div id="statBody" style="margin-top:20px"></div>
     <button class="ghost" id="exportics">Add to Calendar app</button>
     <p class="note">Downloads every session as calendar events for Apple Calendar.</p>
@@ -575,7 +567,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '6.1';
+const APP_VERSION = '6.2';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -855,7 +847,7 @@ const dayStart   = d => { const x=new Date(d); x.setHours(0,0,0,0); return x; };
    86,400,000 ms lands an hour off and files sessions on the wrong day.
    Calendar arithmetic keeps every bucket on its own midnight. */
 const addDays    = (d,n) => { const x=new Date(d); x.setDate(x.getDate()+n); return x; };
-const weekStart  = d => { const x=dayStart(d); x.setDate(x.getDate()-((x.getDay()+6)%7)); return x; };
+const weekStart  = d => { const x=dayStart(d); x.setDate(x.getDate()-x.getDay()); return x; };  /* Sunday */
 const monthStart = d => { const x=new Date(d); x.setDate(1); x.setHours(0,0,0,0); return x; };
 const inRange = (s,a,b) => s.start >= a.getTime() && s.start < b.getTime();
 const mins = list => Math.round(list.reduce((n,s)=>n+s.dur,0)/60);
@@ -2006,15 +1998,16 @@ document.addEventListener('visibilitychange', async ()=>{
 });
 
 /* ══ stats ═════════════════════════════════════════════════════ */
-let statView = 'week', statOffset = 0;
+let statView = 'days', statOffset = 0, statType = 'all';
 
 /* Consistency is the spine: whether it happened, and whether it kept
    happening. Time is texture, so it moves to a secondary line — it
    means very different things across types and nothing at all for
    the written ones. The streak is global, not range-scoped. */
-function currentStreak(){
-  if(!sessions.length) return 0;
-  const days = new Set(sessions.map(x=>dayStart(x.start).getTime()));
+function currentStreak(type){
+  const pool = type && type !== 'all' ? sessions.filter(s=>s.type === type) : sessions;
+  if(!pool.length) return 0;
+  const days = new Set(pool.map(x=>dayStart(x.start).getTime()));
   let d = dayStart(new Date());
   if(!days.has(d.getTime())) d = addDays(d, -1);   // today still has time to happen
   let n = 0;
@@ -2025,16 +2018,18 @@ function totalsBlock(list){
   const body = list.filter(s=>s.category === 'physical');
   const mind = list.filter(s=>s.category === 'mental');
   const days = new Set(list.map(s=>dayStart(s.start).getTime())).size;
-  const streak = currentStreak();
+  const streak = currentStreak(statType);
   const total = list.reduce((n,s)=>n+s.dur, 0);
   return `<div class="totals">
       ${tileHTML(list.length, 'Sessions', true)}
       ${tileHTML(days, 'Days trained', true)}
       ${tileHTML(streak, 'Day streak', true)}
     </div>
-    ${list.length ? `<p class="adh" style="margin:-10px 0 20px">
+    ${!list.length ? '' : statType !== 'all'
+      ? `<p class="adh" style="margin:-10px 0 20px"><b>${hhmm(total)}</b> total</p>`
+      : `<p class="adh" style="margin:-10px 0 20px">
       <b>${hhmm(total)}</b> total · body <b>${hhmm(body.reduce((n,s)=>n+s.dur,0))}</b>
-      · mind <b>${hhmm(mind.reduce((n,s)=>n+s.dur,0))}</b></p>` : ''}`;
+      · mind <b>${hhmm(mind.reduce((n,s)=>n+s.dur,0))}</b></p>`}`;
 }
 const EFFORTS = {easy:'Easy', moderate:'Moderate', hard:'Hard'};
 /* What body and mind time was actually made of. The two-colour bars
@@ -2113,87 +2108,78 @@ const navRow = label => `<div class="navrow">
   <button id="statFwd" aria-label="Later">›</button>
 </div>`;
 
+/* ══ stats ══════════════════════════════════════════════════════
+   Three windows, one chart. Each is seven buckets — seven days of a
+   week, seven weeks, or seven months — so the page keeps its shape and
+   only the grain changes. There is no single-day view: today already
+   lives on the home screen. */
+function statWindow(){
+  const now = new Date();
+  if(statView === 'weeks'){
+    const end = addDays(weekStart(now), statOffset*7);
+    const first = addDays(end, -6*7);
+    const buckets = [...Array(7)].map((_,i)=>{
+      const from = addDays(first, i*7);
+      return {from, to: addDays(from, 7), label: (from.getMonth()+1) + '/' + from.getDate()};
+    });
+    return {buckets, from:first, to:addDays(end,7),
+            title: `${dDay(first)} – ${dDay(addDays(end,6))}`, foot:'Sessions per week'};
+  }
+  if(statView === 'months'){
+    const base = monthStart(now); base.setMonth(base.getMonth() + statOffset);
+    const buckets = [...Array(7)].map((_,i)=>{
+      const from = new Date(base.getFullYear(), base.getMonth()-6+i, 1);
+      return {from, to: new Date(from.getFullYear(), from.getMonth()+1, 1),
+              label: from.toLocaleDateString([], {month:'short'})};
+    });
+    return {buckets, from:buckets[0].from, to:buckets[6].to,
+            title: `${buckets[0].label} – ${buckets[6].label}`, foot:'Sessions per month'};
+  }
+  const a = addDays(weekStart(now), statOffset*7);
+  const buckets = [...Array(7)].map((_,i)=>{
+    const from = addDays(a, i);
+    return {from, to: addDays(from, 1), label: 'SMTWTFS'[from.getDay()]};
+  });
+  return {buckets, from:a, to:addDays(a,7),
+          title: statOffset === 0 ? 'This week' : statOffset === -1 ? 'Last week'
+                 : `${dDay(a)} – ${dDay(addDays(a,6))}`,
+          foot:'Sessions per day', week:true};
+}
+
+const ofType = list => statType === 'all' ? list : list.filter(s=>s.type === statType);
+
 function renderStats(){
   const body = el('statBody'); if(!body) return;
-  const now = new Date();
+  const w = statWindow();
+  const list = ofType(sessionsIn(w.from, w.to));
+  const order = t => (typeOf(t).category === 'mental' ? 0 : 1);   // mind stacks on top
 
-  if(statView === 'day'){
-    const d = addDays(dayStart(now), statOffset);
-    const list = sessionsIn(d, addDays(d,1));
-    body.innerHTML = navRow(statOffset === 0 ? 'Today'
-      : dLong(d))
-      + totalsBlock(list) + typeBreakdown(list) + sessionRows(list);
-  }
-  else if(statView === 'week'){
-    const a = weekStart(now); a.setDate(a.getDate() + statOffset*7);
-    const b = addDays(a, 7);
-    const list = sessionsIn(a,b);
-    /* Counts, not minutes — one sit and one long class are both one
-       session, which is what the rest of this page now measures. Each
-       segment is a type, so hue still reads warm for body, cool for
-       mind, while saying which kind of training it was. */
-    const perDay = [...Array(7)].map((_,i)=>{
-      const d0 = addDays(a, i), d1 = addDays(d0, 1);
-      const day = sessionsIn(d0, d1);
-      const byType = {};
-      day.forEach(x=>{ byType[x.type] = (byType[x.type] || 0) + 1; });
-      return {count: day.length, byType};
-    });
-    const peak = Math.max(3, ...perDay.map(d=>d.count));
-    const order = t => (typeOf(t).category === 'mental' ? 0 : 1);   // mind stacks on top
-    const bars = perDay.map(d=>{
-      const segs = Object.keys(d.byType)
-        .sort((x,y)=>order(x)-order(y) || x.localeCompare(y))
-        .map(t=>`<i style="height:${(d.byType[t]/peak)*100}%;background:${typeOf(t).accent}"></i>`)
-        .join('');
-      return `<div><b>${d.count || ''}</b>${segs || '<i class="none" style="height:1%"></i>'}</div>`;
-    }).join('');
-    const shown = [...new Set(sessionsIn(a,b).map(s=>s.type))]
-      .sort((x,y)=>order(x)-order(y) || x.localeCompare(y));
-    const label = statOffset === 0 ? 'This week' : statOffset === -1 ? 'Last week'
-      : `${dDay(a)} – ${dDay(addDays(b, -1))}`;
-    const ad = adherence(a, b);
-    body.innerHTML = navRow(label) + totalsBlock(list) + typeBreakdown(list)
-      + (ad.plan ? `<p class="adh">Planned sessions — <b>${ad.hit} of ${ad.plan}</b></p>` : '')
-      + `<div class="bars">${bars}</div>`
-      + `<div class="axis">${['M','T','W','T','F','S','S'].map(x=>`<span>${x}</span>`).join('')}</div>`
-      + `<div class="key">${shown.map(t=>
-          `<span><i style="background:${typeOf(t).accent}"></i>${esc(typeOf(t).name)}</span>`).join('')
-          }<span>Sessions per day</span></div>`
-      + sessionRows(list);
-  }
-  else {
-    const a = monthStart(now); a.setMonth(a.getMonth() + statOffset);
-    const b = new Date(a.getFullYear(), a.getMonth()+1, 1);
-    const list = sessionsIn(a,b);
-    const days = Math.round((b-a)/DAY);
-    const lead = (a.getDay()+6)%7;
-    const today = dayStart(new Date()).getTime();
-    let peak = 1;
-    const nowD = dayStart(new Date());
-    const perDay = [...Array(days)].map((_,i)=>{
-      const d0 = new Date(a.getFullYear(), a.getMonth(), i+1);
-      const day = sessionsIn(d0, addDays(d0,1));
-      const ph = mins(day.filter(s=>s.category==='physical'));
-      const mt = mins(day.filter(s=>s.category==='mental'));
-      const m = ph + mt;
-      peak = Math.max(peak, m);
-      const missed = !m && d0 < nowD && plannedFor(d0).length > 0;
-      return {m, missed, colour: m ? (ph >= mt ? 'var(--physical)' : 'var(--mental)') : ''};
-    });
-    let cells = ['M','T','W','T','F','S','S'].map(x=>`<span class="hd">${x}</span>`).join('');
-    cells += '<i class="blank"></i>'.repeat(lead);
-    perDay.forEach((d,i)=>{
-      const d0 = new Date(a.getFullYear(), a.getMonth(), i+1).getTime();
-      const fill = d.m ? Math.round(22 + 78*(d.m/peak)) : 0;
-      cells += `<i class="${d.m?'hit':''}${d.missed?' plan':''}${d0===today?' today':''}" title="${d.m} min">`
-        + (d.m ? `<u style="height:${fill}%;background:${d.colour}"></u>` : '')
-        + `<span>${i+1}</span></i>`;
-    });
-    body.innerHTML = navRow(dMonth(a))
-      + totalsBlock(list) + typeBreakdown(list)
-      + `<div class="cal">${cells}</div>` + sessionRows(list);
-  }
+  const cols = w.buckets.map(b=>{
+    const inB = ofType(sessionsIn(b.from, b.to));
+    const byType = {};
+    inB.forEach(x=>{ byType[x.type] = (byType[x.type] || 0) + 1; });
+    return {count: inB.length, byType, label: b.label};
+  });
+  const peak = Math.max(3, ...cols.map(c=>c.count));
+  const bars = cols.map(c=>{
+    const segs = Object.keys(c.byType)
+      .sort((x,y)=>order(x)-order(y) || x.localeCompare(y))
+      .map(t=>`<i style="height:${(c.byType[t]/peak)*100}%;background:${typeOf(t).accent}"></i>`).join('');
+    return `<div><b>${c.count || ''}</b>${segs || '<i class="none" style="height:1%"></i>'}</div>`;
+  }).join('');
+  const shown = [...new Set(list.map(s=>s.type))].sort((x,y)=>order(x)-order(y) || x.localeCompare(y));
+  const ad = w.week ? adherence(w.from, w.to) : null;
+
+  body.innerHTML = navRow(w.title)
+    + totalsBlock(list)
+    + (statType === 'all' ? typeBreakdown(list) : '')
+    + (ad && ad.plan ? `<p class="adh">Planned sessions — <b>${ad.hit} of ${ad.plan}</b></p>` : '')
+    + `<div class="bars">${bars}</div>`
+    + `<div class="axis">${cols.map(c=>`<span>${esc(c.label)}</span>`).join('')}</div>`
+    + `<div class="key">${shown.map(t=>
+        `<span><i style="background:${typeOf(t).accent}"></i>${esc(typeOf(t).name)}</span>`).join('')
+        }<span>${esc(w.foot)}</span></div>`
+    + sessionRows(list);
 
   const back = el('statBack'), fwd = el('statFwd');
   if(back) back.onclick = ()=>{ statOffset--; renderStats(); };
@@ -2202,11 +2188,31 @@ function renderStats(){
     fwd.style.opacity = statOffset >= 0 ? .3 : 1;
     fwd.onclick = ()=>{ if(statOffset < 0){ statOffset++; renderStats(); } };
   }
+  paintTypeFilter();
 }
+
+/* the filter offers only activities you have actually done */
+function paintTypeFilter(){
+  const sel = el('statType'); if(!sel) return;
+  const kinds = [...new Set(sessions.map(s=>s.type))].sort();
+  const opts = [['all','All activities']].concat(kinds.map(k=>[k, typeOf(k).name]));
+  const sig = opts.map(o=>o[0]).join(',');
+  if(sel.dataset.sig !== sig){
+    sel.dataset.sig = sig;
+    sel.innerHTML = opts.map(o=>`<option value="${esc(o[0])}">${esc(o[1])}</option>`).join('');
+  }
+  if(!kinds.includes(statType) && statType !== 'all') statType = 'all';
+  sel.value = statType;
+}
+
 el('statBody').addEventListener('click', e=>{
   const b = e.target.closest('[data-sid]'); if(!b) return;
   const s = sessions.find(x=>String(x.start) === b.dataset.sid);
   if(s) editSession(s);
+});
+el('statType').addEventListener('change', e=>{
+  statType = e.target.value;
+  renderStats();
 });
 el('statTabs').addEventListener('click', e=>{
   const b = e.target.closest('.chip'); if(!b) return;
