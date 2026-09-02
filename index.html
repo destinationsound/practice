@@ -29,6 +29,7 @@
                               never used for text, only for fills */
     --danger:#AE3C2C;
     --physical:#FFC40C;
+    --upkeep:#6E6E78;
     --mental:#12BFA6;
     --display:'Avenir Next Condensed','HelveticaNeue-CondensedBold','Arial Narrow',system-ui,sans-serif;
     --body:-apple-system,BlinkMacSystemFont,system-ui,'Segoe UI',sans-serif;
@@ -47,6 +48,7 @@
     --on-accent:#231014;
     --danger:#E8503A;
     --physical:#C9A227;
+    --upkeep:#6E6E78;
     --mental:#79A9A0;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
@@ -177,6 +179,25 @@
   .navrow{display:flex;align-items:center;justify-content:space-between;margin:2px 0 18px;}
   .navrow button{width:42px;height:38px;border:1px solid var(--line);border-radius:2px;color:var(--text-dim);font-size:16px;text-align:center;}
   .navrow span{font-family:var(--display);text-transform:uppercase;letter-spacing:.16em;font-size:14px;font-weight:600;}
+  /* The filter rides on the section heading rather than taking a full
+     row. A real <select> sits invisibly on top so iOS still opens its
+     native wheel; the pill is only the thing you see. */
+  .secRow{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:28px 0 14px;}
+  .secRow h2.sec{margin:0;flex:none;}
+  .filterPill{
+    position:relative;display:inline-flex;align-items:center;gap:7px;
+    border:1px solid var(--line);border-radius:20px;padding:7px 11px;
+    font-family:var(--display);text-transform:uppercase;letter-spacing:.09em;
+    font-size:12px;font-weight:600;color:var(--text);min-width:0;
+  }
+  .filterPill:active{background:var(--surface);}
+  .filterPill svg{width:13px;height:13px;fill:currentColor;flex:none;color:var(--text-dim);}
+  .filterPill .lab{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .filterPill select{
+    position:absolute;inset:0;width:100%;height:100%;opacity:0;
+    -webkit-appearance:none;appearance:none;border:0;padding:0;margin:0;
+    background:none;font-size:16px;
+  }
   .totals{display:flex;gap:10px;margin-bottom:22px;}
   .tot{flex:1;border:1px solid var(--line);border-radius:2px;padding:12px 10px;}
   .tot b{display:block;font-family:var(--display);font-size:26px;font-weight:700;line-height:1;margin-bottom:5px;color:var(--text);}
@@ -255,7 +276,7 @@
       <button class="chip" data-v="weeks" aria-pressed="false">Weeks</button>
       <button class="chip" data-v="months" aria-pressed="false">Months</button>
     </div>
-    <select id="statType" style="margin-top:12px"></select>
+
     <div id="statBody" style="margin-top:20px"></div>
     <button class="ghost" id="exportics">Add to Calendar app</button>
     <p class="note">Downloads every session as calendar events for Apple Calendar.</p>
@@ -567,7 +588,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '6.2';
+const APP_VERSION = '6.9';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -597,10 +618,16 @@ const APP_VERSION = '6.2';
    ══════════════════════════════════════════════════════════════ */
 
 /* ══ categories ════════════════════════════════════════════════ */
+/* Body and Mind are where effort goes; Upkeep is what keeps the week
+   running. Upkeep is deliberately outside the balance — laundry is not
+   competing with meditation. The stored ids stay as they were so no
+   history has to migrate. */
 const CATS = [
-  {id:'physical', name:'Physical health', color:'var(--physical)'},
-  {id:'mental',   name:'Mental health',   color:'var(--mental)'},
+  {id:'physical', name:'Body',   color:'var(--physical)'},
+  {id:'mental',   name:'Mind',   color:'var(--mental)'},
+  {id:'upkeep',   name:'Upkeep', color:'var(--upkeep)'},
 ];
+const BALANCE_CATS = CATS.filter(c=>c.id !== 'upkeep');
 const catOf = id => CATS.find(c=>c.id === id) || CATS[0];
 
 /* ══ exercise types ════════════════════════════════════════════
@@ -705,6 +732,29 @@ const TYPES = {
 
   },
   journal:{  name:'Journaling',     category:'mental',   accent:'#6C5CE7', ink:'#FFFFFF', accentDark:'#9490DC', inkDark:'#14122A', kind:'written',blurb:'Daily writing'},
+  task:{
+    name:'Task', category:'upkeep', accent:'#6E6E78', ink:'#FFFFFF',
+    ready:true, kind:'checkoff',
+    blurb:'Something you keep up — check it off when done',
+    defaults:()=>({timed:false}),
+    fields:[
+      {kind:'chips', key:'timed', label:'Record', type:'boolean',
+       options:[[false,'Just done'],[true,'Done and time']]},
+      {kind:'note', text:'Just done logs a single tap. Done and time asks how long it took, which is worth knowing for anything that eats an afternoon.'},
+    ],
+    summary:c=>c.timed ? 'Checked off with time' : 'Checked off',
+    facts:(c,done)=>{
+      const mine = cur ? sessionsFor(cur.id) : [];
+      return [
+        [done, 'Times done'],
+        [currentStreak(cur ? cur.type : 'task'), 'Day streak'],
+        [mine.length ? dDay(mine[0].start) : '—', 'Last done'],
+        [c.timed ? hhmm(mine.reduce((n,s)=>n+s.dur,0)) : '—', 'Total time'],
+      ];
+    },
+    line:()=>'',
+    logPastLabel:'Log a past one',
+  },
   cbt:{      name:'Thought record', category:'mental',   accent:'#2E9BF0', ink:'#1A1A1D', accentDark:'#7CACD4', inkDark:'#0D1928', kind:'written',blurb:'CBT worksheets'},
 };
 const typeOf = id => TYPES[id] || TYPES.muaythai;
@@ -932,7 +982,8 @@ function commitSession(rec){
   if(!rec) return null;
   /* A written entry has no duration — its worth is that it exists.
      Only timed types can be "too short". */
-  const floor = typeOf(rec.type).kind === 'written' ? 0 : MIN_SESSION;
+  const k = typeOf(rec.type).kind;
+  const floor = (k === 'written' || k === 'checkoff') ? 0 : MIN_SESSION;
   if(!(rec.dur >= floor)){ lastDiscard = rec.dur|0; return null; }
   sessions.push(rec);
   sessionsChanged();
@@ -953,6 +1004,36 @@ function lastDone(id){
   const days = Math.floor((dayStart(new Date()) - dayStart(hits[0].start))/DAY);
   return days === 0 ? 'Done today' : days === 1 ? 'Yesterday' : `${days} days ago`;
 }
+
+/* ══ upkeep ═════════════════════════════════════════════════════
+   A task has no session screen. Starting it IS finishing it, so the
+   tap logs and stays put. Timed tasks hand off to the manual form,
+   which already asks for a duration. */
+/* A day is either kept or it is not — checking twice does not make it
+   truer, it just inflates the streak. So a check-off is idempotent for
+   the day, and tapping again takes it back rather than adding another. */
+const doneToday = ex => !!ex && didOn(ex.id, new Date());
+
+function checkOff(ex, when){
+  const e = ex || cur;
+  if(!e || doneToday(e)) return false;
+  if(e.cfg && e.cfg.timed){ openLog(e.id, null); return false; }
+  commitSession(makeSession(e, {start: when || Date.now(), dur: 0, source:'app'}));
+  return true;
+}
+function uncheckToday(ex){
+  const e = ex || cur;
+  if(!e) return;
+  const a = dayStart(new Date()), b = addDays(a, 1);
+  const todays = sessions.filter(s=>s.exerciseId === e.id && inRange(s, a, b));
+  if(!todays.length) return;
+  sessions = sessions.filter(s=>!todays.includes(s));
+  sessionsChanged();
+}
+TYPES.task.open = ()=>{
+  doneToday(cur) ? uncheckToday(cur) : checkOff(cur);
+  backToExercise();
+};
 
 /* ══ backup ════════════════════════════════════════════════════
    One file holding everything. Import MERGES rather than replaces,
@@ -1001,7 +1082,7 @@ function applyBackup(found, withSettings){
 let screen = 'home', cur = null, editing = null;
 /* Screens injected by a module can register where Back returns to. */
 const BACKTO = {};
-const TITLES = {home:'BETR', stats:'Stats', settings:'Settings', newtype:'New exercise', exercise:'Exercise', editor:'Edit', med:'Meditation', log:'Log a session', preset:'Choose a plan'};
+const TITLES = {home:'BETR', stats:'Stats', settings:'Settings', newtype:'Add new', exercise:'Details', editor:'Edit', med:'Meditation', log:'Log a past one', preset:'Choose a plan'};
 
 function show(name){
   screen = name;
@@ -1011,7 +1092,7 @@ function show(name){
   const rooted = ['home','stats','settings'].includes(name);
   el('back').hidden = rooted;
   el('back').textContent = (name === 'editor') ? '✕' : '‹';
-  el('title').textContent = name === 'editor' && editing && editing.isNew ? 'New exercise' : (TITLES[name] || 'BETR');
+  el('title').textContent = name === 'editor' && editing && editing.isNew ? 'Add new' : (TITLES[name] || 'BETR');
   document.querySelectorAll('.nav button').forEach(b=>{
     const on = b.dataset.tab === name || (!rooted && name !== 'session' && b.dataset.tab === 'home');
     b.setAttribute('aria-current', on ? 'page' : 'false');
@@ -1055,7 +1136,7 @@ el('nav').addEventListener('click', e=>{
 function balanceBlock(){
   const a = weekStart(new Date()), b = addDays(a, 7);
   const wk = sessionsIn(a,b);
-  const per = CATS.map(c=>({c, m: mins(wk.filter(s=>s.category === c.id))}));
+  const per = BALANCE_CATS.map(c=>({c, m: mins(wk.filter(s=>s.category === c.id))}));
   const peak = Math.max(1, ...per.map(p=>p.m));
   return `<div class="balance">
     <p class="eyebrow">This week</p>
@@ -1087,7 +1168,7 @@ function todayBlock(){
         return rowHTML({
           cls: 'today' + (done?' isdone':''), attr: `data-e="${e.id}"`,
           accent: t.accent, name: e.name,
-          sub: esc(t.name) + (done ? ' · done' : ''),
+          sub: esc(t.name),
           mark: done ? '✓' : ''
         });
       }).join('');
@@ -1108,7 +1189,7 @@ function renderHome(){
       : `<div class="nothing">Nothing here yet.</div>`);
   }).join('');
   el('homeBody').innerHTML = todayBlock() + balanceBlock() + sections
-    + `<button class="addbtn" id="newEx">+ New exercise</button>`;
+    + `<button class="addbtn" id="newEx">+ Add new</button>`;
 }
 el('homeBody').addEventListener('click', e=>{
   if(e.target.closest('#newEx')){ renderTypes(); return show('newtype'); }
@@ -1201,12 +1282,15 @@ function openExercise(id){
     <div class="facts">${facts.map(f=>tileHTML(esc(f[0]), f[1])).join('')}</div>
     ${cur.logOnly
       ? `<button class="primary" id="logForEx">Log a session</button>`
-      : `<button class="primary" id="startEx" ${t.ready?'':'disabled'}>${t.ready ? 'Start' : 'Coming soon'}</button>`}
+      : `<button class="primary" id="startEx" ${t.ready?'':'disabled'}>${
+          !t.ready ? 'Coming soon'
+          : t.kind === 'checkoff' ? (doneToday(cur) ? 'Done today — tap to undo' : 'Check off')
+          : 'Start'}</button>`}
     ${t.ready ? '<button class="ghost" id="editEx">Edit exercise</button>' : ''}
     <button class="ghost" id="dupEx">Duplicate</button>
     ${cur.logOnly ? '' : `<button class="ghost" id="logForEx">${esc(t.logPastLabel || 'Log a past session')}</button>`}
     ${t.detailExtra ? t.detailExtra(cur) : ''}
-    <button class="ghost danger" id="delEx">Delete exercise</button>`;
+    <button class="ghost danger" id="delEx">Delete</button>`;
   show('exercise');
 }
 el('exerciseDetail').addEventListener('click', e=>{
@@ -1230,7 +1314,7 @@ el('exerciseDetail').addEventListener('click', e=>{
     exercises.push(copy); saveEx(); openExercise(copy.id);
   }
   const del = e.target.closest('#delEx');
-  if(del) confirmTap(del, 'Tap again to delete', 'Delete exercise', ()=>{
+  if(del) confirmTap(del, 'Tap again to delete', 'Delete', ()=>{
     exercises = exercises.filter(x=>x.id !== cur.id); saveEx(); cur = null;
     resetAccent(); renderHome(); show('home');
   });
@@ -1334,19 +1418,20 @@ function openEditor(source, isNew){
     </div>
     <p class="note">Scheduled days appear under Today on the home screen. Leave all off for no schedule.</p>
 
-    <h2 class="sec">How it runs</h2>
+    ${t.kind === 'checkoff' ? '' : `<h2 class="sec">How it runs</h2>
     <div class="chips" id="exMode">
       <button class="chip" data-mode="app">App-guided</button>
       <button class="chip" data-mode="log">Log only</button>
     </div>
     <p class="note">${ex.logOnly
       ? 'For training that happens away from the phone — a class, a session with a coach. It keeps its own history and streak, you just enter it afterwards.'
-      : 'The app runs this one and records what happened.'}</p>
+      : 'The app runs this one and records what happened.'}</p>`}
     ${ex.logOnly ? '' : (t.fields ? fieldsHTML(t.fields, c) : '')}
     ${ex.logOnly ? '' : (t.editorHTML ? t.editorHTML(c) : '')}
-    <button class="primary" id="saveEx" style="margin-top:30px">${isNew ? 'Save exercise' : 'Save changes'}</button>
+    <button class="primary" id="saveEx" style="margin-top:30px">${isNew ? 'Save' : 'Save changes'}</button>
     <button class="ghost" id="cancelEx">${isNew ? 'Discard' : 'Discard changes'}</button>`;
 
+  if(t.kind === 'checkoff') ex.logOnly = false;   // always app-guided
   const paintDays = ()=>setChips('exDays', b=>!!(ex.sched && ex.sched.days || []).includes(+b.dataset.day));
   paintDays();
   el('exDays').addEventListener('click', ev=>{
@@ -1359,6 +1444,7 @@ function openEditor(source, isNew){
     paintDays();
   });
 
+  if(t.kind !== 'checkoff'){
   setChips('exMode', b=>(b.dataset.mode === 'log') === !!ex.logOnly);
   el('exMode').addEventListener('click', ev=>{
     const b = ev.target.closest('.chip'); if(!b) return;
@@ -1367,6 +1453,7 @@ function openEditor(source, isNew){
     ex.logOnly = wantLog;
     openEditor(ex, isNew);           // the rest of the form changes shape
   });
+  }
 
   const painters = [];
   const api = {
@@ -1998,14 +2085,18 @@ document.addEventListener('visibilitychange', async ()=>{
 });
 
 /* ══ stats ═════════════════════════════════════════════════════ */
-let statView = 'days', statOffset = 0, statType = 'all';
+let statView = 'days', statOffset = 0, statType = 'all', statTask = 'all';
 
 /* Consistency is the spine: whether it happened, and whether it kept
    happening. Time is texture, so it moves to a secondary line — it
    means very different things across types and nothing at all for
    the written ones. The streak is global, not range-scoped. */
-function currentStreak(type){
-  const pool = type && type !== 'all' ? sessions.filter(s=>s.type === type) : sessions;
+function currentStreak(sel){
+  const pool = !sel || sel === 'all' ? sessions
+    : sel === 'training' ? sessions.filter(s=>!isUpkeep(s))
+    : sel === 'upkeep' ? sessions.filter(isUpkeep)
+    : String(sel).startsWith('ex:') ? sessions.filter(s=>s.exerciseId === String(sel).slice(3))
+    : sessions.filter(s=>s.type === sel);
   if(!pool.length) return 0;
   const days = new Set(pool.map(x=>dayStart(x.start).getTime()));
   let d = dayStart(new Date());
@@ -2014,11 +2105,11 @@ function currentStreak(type){
   while(days.has(d.getTime())){ n++; d = addDays(d, -1); }
   return n;
 }
-function totalsBlock(list){
+function totalsBlock(list, streakSel){
   const body = list.filter(s=>s.category === 'physical');
   const mind = list.filter(s=>s.category === 'mental');
   const days = new Set(list.map(s=>dayStart(s.start).getTime())).size;
-  const streak = currentStreak(statType);
+  const streak = currentStreak(streakSel);
   const total = list.reduce((n,s)=>n+s.dur, 0);
   return `<div class="totals">
       ${tileHTML(list.length, 'Sessions', true)}
@@ -2146,16 +2237,25 @@ function statWindow(){
           foot:'Sessions per day', week:true};
 }
 
-const ofType = list => statType === 'all' ? list : list.filter(s=>s.type === statType);
+/* "All" means training. Three checkmarks a day would otherwise swamp
+   the session count and turn the streak into a measure of whether you
+   opened the app. Filter to a task and the whole page scopes to it. */
+const isUpkeep = s => typeOf(s.type).category === 'upkeep';
+/* Two independent lenses. Exercises filter by type, because all Muay
+   Thai belongs together. Upkeep filters by the individual task, because
+   every task shares one type and each is its own habit. */
+const ofType = list => statType === 'all'
+  ? list.filter(s=>!isUpkeep(s))
+  : list.filter(s=>!isUpkeep(s) && s.type === statType);
+const ofTask = list => statTask === 'all'
+  ? list.filter(isUpkeep)
+  : list.filter(s=>s.exerciseId === statTask);
 
-function renderStats(){
-  const body = el('statBody'); if(!body) return;
-  const w = statWindow();
-  const list = ofType(sessionsIn(w.from, w.to));
+/* One chart, drawn twice — once for training, once for upkeep. */
+function chartHTML(w, pick){
   const order = t => (typeOf(t).category === 'mental' ? 0 : 1);   // mind stacks on top
-
   const cols = w.buckets.map(b=>{
-    const inB = ofType(sessionsIn(b.from, b.to));
+    const inB = pick(sessionsIn(b.from, b.to));
     const byType = {};
     inB.forEach(x=>{ byType[x.type] = (byType[x.type] || 0) + 1; });
     return {count: inB.length, byType, label: b.label};
@@ -2167,19 +2267,80 @@ function renderStats(){
       .map(t=>`<i style="height:${(c.byType[t]/peak)*100}%;background:${typeOf(t).accent}"></i>`).join('');
     return `<div><b>${c.count || ''}</b>${segs || '<i class="none" style="height:1%"></i>'}</div>`;
   }).join('');
+  return `<div class="bars">${bars}</div>
+    <div class="axis">${cols.map(c=>`<span>${esc(c.label)}</span>`).join('')}</div>`;
+}
+
+const FUNNEL = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 4h14l-5.6 6.6V16l-2.8 1.4v-6.8L3 4z"/></svg>';
+const CHEVS  = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3.6 6.6 7h6.8L10 3.6zM10 16.4 13.4 13H6.6L10 16.4z"/></svg>';
+
+function sectionRow(title, id, opts, current){
+  const label = (opts.find(o=>o[0] === current) || opts[0])[1];
+  return `<div class="secRow">
+    <h2 class="sec">${esc(title)}</h2>
+    <span class="filterPill">${FUNNEL}<span class="lab">${esc(label)}</span>${CHEVS}
+      <select id="${id}" aria-label="Filter ${esc(title)}">${opts.map(o=>
+        `<option value="${esc(o[0])}"${o[0] === current ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select>
+    </span>
+  </div>`;
+}
+
+function exerciseSection(w){
+  const list = ofType(sessionsIn(w.from, w.to));
+  const kinds = [...new Set(sessions.filter(s=>!isUpkeep(s)).map(s=>s.type))].sort();
+  const opts = [['all','All activities']].concat(kinds.map(k=>[k, typeOf(k).name]));
+  if(!opts.some(o=>o[0] === statType)) statType = 'all';
+  const order = t => (typeOf(t).category === 'mental' ? 0 : 1);
   const shown = [...new Set(list.map(s=>s.type))].sort((x,y)=>order(x)-order(y) || x.localeCompare(y));
   const ad = w.week ? adherence(w.from, w.to) : null;
 
-  body.innerHTML = navRow(w.title)
-    + totalsBlock(list)
+  return sectionRow('Exercises', 'statType', opts, statType)
+    + totalsBlock(list, statType === 'all' ? 'training' : statType)
     + (statType === 'all' ? typeBreakdown(list) : '')
     + (ad && ad.plan ? `<p class="adh">Planned sessions — <b>${ad.hit} of ${ad.plan}</b></p>` : '')
-    + `<div class="bars">${bars}</div>`
-    + `<div class="axis">${cols.map(c=>`<span>${esc(c.label)}</span>`).join('')}</div>`
+    + chartHTML(w, ofType)
     + `<div class="key">${shown.map(t=>
         `<span><i style="background:${typeOf(t).accent}"></i>${esc(typeOf(t).name)}</span>`).join('')
         }<span>${esc(w.foot)}</span></div>`
     + sessionRows(list);
+}
+
+function upkeepSection(w){
+  const tasks = exercises.filter(e=>typeOf(e.type).category === 'upkeep')
+                         .sort((a,b)=>a.name.localeCompare(b.name));
+  if(!tasks.length) return '';
+  const opts = [['all','All upkeep tasks']].concat(tasks.map(e=>[e.id, e.name]));
+  if(!opts.some(o=>o[0] === statTask)) statTask = 'all';
+  const list = ofTask(sessionsIn(w.from, w.to));
+  const days = new Set(list.map(s=>dayStart(s.start).getTime())).size;
+  const streak = currentStreak(statTask === 'all' ? 'upkeep' : 'ex:' + statTask);
+
+  /* with everything shown, a row per task says more than one merged bar */
+  const rows = statTask === 'all'
+    ? tasks.map(e=>{
+        const n = sessionsIn(w.from, w.to).filter(s=>s.exerciseId === e.id).length;
+        const st = currentStreak('ex:' + e.id);
+        return rowHTML({attr:`data-upk="${esc(e.id)}"`, accent:'var(--upkeep)',
+          name:e.name, nameStyle:'font-size:17px',
+          sub:`${n} in this window${st ? ` · ${st} day streak` : ''}`, go:'›'});
+      }).join('')
+    : sessionRows(list);
+
+  return `<div style="height:20px"></div>` + sectionRow('Upkeep', 'statTask', opts, statTask)
+    + `<div class="totals">
+        ${tileHTML(list.length, 'Checks', true)}
+        ${tileHTML(days, 'Days kept', true)}
+        ${tileHTML(streak, 'Day streak', true)}
+      </div>`
+    + chartHTML(w, ofTask)
+    + `<div class="key"><span><i style="background:var(--upkeep)"></i>Upkeep</span><span>${esc(w.foot)}</span></div>`
+    + rows;
+}
+
+function renderStats(){
+  const body = el('statBody'); if(!body) return;
+  const w = statWindow();
+  body.innerHTML = navRow(w.title) + exerciseSection(w) + upkeepSection(w);
 
   const back = el('statBack'), fwd = el('statFwd');
   if(back) back.onclick = ()=>{ statOffset--; renderStats(); };
@@ -2188,31 +2349,11 @@ function renderStats(){
     fwd.style.opacity = statOffset >= 0 ? .3 : 1;
     fwd.onclick = ()=>{ if(statOffset < 0){ statOffset++; renderStats(); } };
   }
-  paintTypeFilter();
 }
 
-/* the filter offers only activities you have actually done */
-function paintTypeFilter(){
-  const sel = el('statType'); if(!sel) return;
-  const kinds = [...new Set(sessions.map(s=>s.type))].sort();
-  const opts = [['all','All activities']].concat(kinds.map(k=>[k, typeOf(k).name]));
-  const sig = opts.map(o=>o[0]).join(',');
-  if(sel.dataset.sig !== sig){
-    sel.dataset.sig = sig;
-    sel.innerHTML = opts.map(o=>`<option value="${esc(o[0])}">${esc(o[1])}</option>`).join('');
-  }
-  if(!kinds.includes(statType) && statType !== 'all') statType = 'all';
-  sel.value = statType;
-}
-
-el('statBody').addEventListener('click', e=>{
-  const b = e.target.closest('[data-sid]'); if(!b) return;
-  const s = sessions.find(x=>String(x.start) === b.dataset.sid);
-  if(s) editSession(s);
-});
-el('statType').addEventListener('change', e=>{
-  statType = e.target.value;
-  renderStats();
+el('statBody').addEventListener('change', e=>{
+  if(e.target.id === 'statType'){ statType = e.target.value; renderStats(); }
+  if(e.target.id === 'statTask'){ statTask = e.target.value; renderStats(); }
 });
 el('statTabs').addEventListener('click', e=>{
   const b = e.target.closest('.chip'); if(!b) return;
@@ -2272,8 +2413,12 @@ function openLog(exId, existing){
   const when = existing ? new Date(existing.start) : new Date(Date.now() - mins*60000);
   const chosen = existing ? existing.exerciseId : (exId || pool[0].id);
   const isApp = existing && existing.source !== 'manual';
-  const written = typeOf(existing ? existing.type
-    : (exercises.find(e=>e.id === (exId || chosen)) || {}).type).kind === 'written';
+  const subject = exercises.find(e=>e.id === (existing ? existing.exerciseId : (exId || chosen)));
+  const kindOf = typeOf(existing ? existing.type : (subject || {}).type).kind;
+  const written = kindOf === 'written' || kindOf === 'checkoff';
+  /* A check-off only asks how long if it was set up to record time.
+     Otherwise there is nothing to say beyond the date. */
+  const wantsTime = !(kindOf === 'checkoff' && !(subject && subject.cfg && subject.cfg.timed));
 
   el('logBody').innerHTML = `
     <h2 class="sec">Exercise</h2>
@@ -2290,12 +2435,12 @@ function openLog(exId, existing){
       <div><input type="time" id="logTime" value="${timeVal(when)}"></div>
     </div>
 
-    <h2 class="sec">How long</h2>
+    ${!wantsTime ? '' : `<h2 class="sec">How long</h2>
     <div class="chips" id="logQuick">
       ${(written ? [5,10,15,20,30] : [15,30,45,60,90]).map(v=>`<button class="chip" data-q="${v}">${v} min</button>`).join('')}
     </div>
     <div class="field" style="margin-top:12px"><label>Duration</label><span class="val" id="logDurv"></span></div>
-    <input type="range" id="logDur" min="${written ? 1 : 5}" max="${written ? 120 : 240}" step="5" value="${Math.min(240, Math.max(5, Math.round(mins/5)*5))}">
+    <input type="range" id="logDur" min="${written ? 1 : 5}" max="${written ? 120 : 240}" step="5" value="${Math.min(240, Math.max(5, Math.round(mins/5)*5))}">`}
     ${written ? '' : `
     <div class="chips" id="logQuick">
       ${[15,30,45,60,90].map(v=>`<button class="chip" data-q="${v}">${v} min</button>`).join('')}
@@ -2323,23 +2468,25 @@ function openLog(exId, existing){
       effort = b.dataset.e; paintEffort();
     });
   }
-  const dur = el('logDur'), durOut = el('logDurv');
-  const syncDur = ()=>{
-    durOut.textContent = fmt(+dur.value * 60);
-    setChips('logQuick', b=>+b.dataset.q === +dur.value);
-  };
-  dur.addEventListener('input', syncDur); syncDur();
-  el('logQuick').addEventListener('click', e=>{
-    const b = e.target.closest('.chip'); if(!b) return;
-    dur.value = b.dataset.q; syncDur();
-  });
+  if(wantsTime){
+    const dur = el('logDur'), durOut = el('logDurv');
+    const syncDur = ()=>{
+      durOut.textContent = fmt(+dur.value * 60);
+      setChips('logQuick', b=>+b.dataset.q === +dur.value);
+    };
+    dur.addEventListener('input', syncDur); syncDur();
+    el('logQuick').addEventListener('click', e=>{
+      const b = e.target.closest('.chip'); if(!b) return;
+      dur.value = b.dataset.q; syncDur();
+    });
+  }
 
   el('logSave').addEventListener('click', ()=>{
     const [y,mo,d] = el('logDate').value.split('-').map(Number);
     const [hh,mm] = el('logTime').value.split(':').map(Number);
     if(!y || isNaN(hh)) return;
     const start = new Date(y, mo-1, d, hh, mm).getTime();
-    const minutes = +el('logDur').value;
+    const minutes = wantsTime ? +el('logDur').value : 0;
     const ex = exercises.find(x=>x.id === el('logEx').value) || (existing ? null : pool[0]);
     const note = el('logNote').value.trim();
 
