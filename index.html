@@ -278,8 +278,6 @@
     </div>
 
     <div id="statBody" style="margin-top:20px"></div>
-    <button class="ghost" id="exportics">Add to Calendar app</button>
-    <p class="note">Downloads every session as calendar events for Apple Calendar.</p>
     <button class="ghost danger" id="clearlog">Clear all history</button>
   </div></section>
 
@@ -588,7 +586,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '6.9';
+const APP_VERSION = '7.1';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -955,7 +953,8 @@ function removeSession(s){
   sessions = sessions.filter(x=>x !== s);
   sessionsChanged();
 }
-const backToExercise = ()=> cur ? openExercise(cur.id) : show('home');
+/* a finished session returns to whatever launched it */
+const backToExercise = ()=> popOrigin();
 
 function makeSession(ex, f){
   const type = ex ? ex.type : 'muaythai';
@@ -1079,6 +1078,37 @@ function applyBackup(found, withSettings){
 }
 
 /* ══ router ════════════════════════════════════════════════════ */
+/* ══ where back goes ════════════════════════════════════════════
+   One origin stack instead of three mechanisms guessing. Anything
+   that opens on top of something else records what it covered, and
+   returning pops it. A screen that no longer makes sense to return
+   to — a deleted exercise — falls through to the last root tab. */
+const ROOTS = ['home','stats','settings'];
+let originStack = [];
+let lastRoot = 'home';
+
+function pushOrigin(){
+  originStack.push({screen, exId: cur ? cur.id : null});
+  if(originStack.length > 8) originStack.shift();
+}
+function popOrigin(){
+  const o = originStack.pop();
+  if(!o) return goRoot();
+  if(ROOTS.includes(o.screen)) return goRoot(o.screen);
+  if(o.screen === 'exercise'){
+    /* the thing it was showing may have been deleted since */
+    if(o.exId && exercises.some(x=>x.id === o.exId)) return openExercise(o.exId);
+    return goRoot();
+  }
+  return goRoot();
+}
+function goRoot(which){
+  const r = which || lastRoot;
+  if(r === 'stats'){ renderStats(); return show('stats'); }
+  if(r === 'settings') return show('settings');
+  resetAccent(); renderHome(); show('home');
+}
+
 let screen = 'home', cur = null, editing = null;
 /* Screens injected by a module can register where Back returns to. */
 const BACKTO = {};
@@ -1097,6 +1127,7 @@ function show(name){
     const on = b.dataset.tab === name || (!rooted && name !== 'session' && b.dataset.tab === 'home');
     b.setAttribute('aria-current', on ? 'page' : 'false');
   });
+  if(ROOTS.includes(name)) lastRoot = name;
   const sc = el('s-'+name).querySelector('.scroll');
   if(sc) sc.scrollTop = 0;
 }
@@ -1110,18 +1141,15 @@ const resetAccent = ()=>{
   document.documentElement.style.removeProperty('--on-accent');
 };
 el('back').addEventListener('click', ()=>{
-  if(screen === 'log'){
-    if(logFrom === 'exercise' && cur) return openExercise(cur.id);
-    if(logFrom === 'stats'){ renderStats(); return show('stats'); }
-    resetAccent(); renderHome(); return show('home');
-  }
+  if(screen === 'log') return popOrigin();
   if(BACKTO[screen]){
     const to = BACKTO[screen];
     return typeof to === 'function' ? to() : show(to);
   }
   if(screen === 'editor') return leaveEditor();
   if(screen === 'preset'){ resetAccent(); renderTypes(); return show('newtype'); }
-  if(screen === 'exercise' || screen === 'newtype'){ resetAccent(); renderHome(); return show('home'); }
+  if(screen === 'exercise') return popOrigin();
+  if(screen === 'newtype'){ resetAccent(); renderHome(); return show('home'); }
   resetAccent(); show('home');
 });
 el('nav').addEventListener('click', e=>{
@@ -1194,6 +1222,15 @@ function renderHome(){
 el('homeBody').addEventListener('click', e=>{
   if(e.target.closest('#newEx')){ renderTypes(); return show('newtype'); }
   const b = e.target.closest('[data-e]'); if(!b) return;
+  /* Once it is done for the day, tapping it should let you fix what was
+     recorded rather than offering to record it again. */
+  pushOrigin();
+  if(b.classList.contains('today')){
+    const a = dayStart(new Date()), z = addDays(a, 1);
+    const rec = sessions.filter(x=>x.exerciseId === b.dataset.e && inRange(x, a, z))
+                        .sort((x,y)=>y.start - x.start)[0];
+    if(rec) return editSession(rec);
+  }
   openExercise(b.dataset.e);
 });
 
@@ -1296,6 +1333,7 @@ function openExercise(id){
 el('exerciseDetail').addEventListener('click', e=>{
   if(!cur) return;
   if(e.target.closest('#startEx') && typeOf(cur.type).ready){
+    pushOrigin();
     loadCfg(cur);
     (typeOf(cur.type).open || openSession)();
   }
@@ -1316,6 +1354,7 @@ el('exerciseDetail').addEventListener('click', e=>{
   const del = e.target.closest('#delEx');
   if(del) confirmTap(del, 'Tap again to delete', 'Delete', ()=>{
     exercises = exercises.filter(x=>x.id !== cur.id); saveEx(); cur = null;
+    originStack = originStack.filter(o=>o.screen !== 'exercise');
     resetAccent(); renderHome(); show('home');
   });
 });
@@ -2146,7 +2185,6 @@ function typeBreakdown(list){
    written text — supplies its own editor; everything else gets the
    generic time-and-note form. A session with no detail has nothing
    type-specific to edit, so it uses the generic form too. */
-let editReturn = 'stats';
 
 /* A type's editor doubles as its live session screen, which hides the
    top bar and closes with ✕ because you are mid-workout. Opening one
@@ -2154,7 +2192,7 @@ let editReturn = 'stats';
    it gets the top bar, a back arrow, and returns where you came from.
    Types call these rather than deciding for themselves. */
 function beginEdit(screenId){
-  editReturn = (screen === 'exercise') ? 'exercise' : 'stats';
+  pushOrigin();
   const sec = el('s-' + screenId);
   if(sec){ sec.classList.remove('sessionScreen'); sec.classList.add('editing'); }
   BACKTO[screenId] = ()=>endEdit(screenId);
@@ -2163,8 +2201,7 @@ function endEdit(screenId){
   const sec = el('s-' + screenId);
   if(sec){ sec.classList.add('sessionScreen'); sec.classList.remove('editing'); }
   delete BACKTO[screenId];
-  if(editReturn === 'exercise' && cur) return openExercise(cur.id);
-  renderStats(); show('stats');
+  popOrigin();
 }
 
 function editSession(s){
@@ -2351,6 +2388,13 @@ function renderStats(){
   }
 }
 
+el('statBody').addEventListener('click', e=>{
+  const u = e.target.closest('[data-upk]');
+  if(u){ statTask = u.dataset.upk; return renderStats(); }
+  const b = e.target.closest('[data-sid]'); if(!b) return;
+  const rec = sessions.find(x=>String(x.start) === b.dataset.sid);
+  if(rec) editSession(rec);
+});
 el('statBody').addEventListener('change', e=>{
   if(e.target.id === 'statType'){ statType = e.target.value; renderStats(); }
   if(e.target.id === 'statTask'){ statTask = e.target.value; renderStats(); }
@@ -2359,26 +2403,6 @@ el('statTabs').addEventListener('click', e=>{
   const b = e.target.closest('.chip'); if(!b) return;
   setChips('statTabs', x=>x === b);
   statView = b.dataset.v; statOffset = 0; renderStats();
-});
-el('exportics').addEventListener('click', ()=>{
-  if(!sessions.length) return;
-  const stamp = ms => new Date(ms).toISOString().replace(/[-:]/g,'').split('.')[0] + 'Z';
-  const body = sessions.map(s=>[
-    'BEGIN:VEVENT',
-    `UID:practice-${s.start}@practice`,
-    `DTSTAMP:${stamp(s.start)}`,
-    `DTSTART:${stamp(s.start)}`,
-    `DTEND:${stamp(s.end)}`,
-    `SUMMARY:${(s.name||s.routine||'Training').replace(/[,;\\]/g, ' ')} — ${hhmm(s.dur)}`,
-    `DESCRIPTION:${(typeOf(s.type).name + (sessionLine(s) ? ' — ' + sessionLine(s) : '')).replace(/[,;\\]/g,' ')}`,
-    'END:VEVENT'
-  ].join('\r\n')).join('\r\n');
-  const ics = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//BETR//EN','CALSCALE:GREGORIAN', body, 'END:VCALENDAR'].join('\r\n');
-  const url = URL.createObjectURL(new Blob([ics], {type:'text/calendar'}));
-  const a = document.createElement('a');
-  a.href = url; a.download = 'practice-sessions.ics';
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url), 4000);
 });
 el('clearlog').addEventListener('click', e=>{
   const btn = e.currentTarget;
@@ -2392,14 +2416,14 @@ el('clearlog').addEventListener('click', e=>{
    A logged session is the same record as one the app drove — it
    just has no detail, so metrics built on detail must skip it
    rather than count it as a zero. */
-let logKey = null, logFrom = 'home';
+let logKey = null;
 const pad2 = n => String(n).padStart(2,'0');
 const dateVal = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
 const timeVal = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 
 function openLog(exId, existing){
   logKey = existing ? existing.start : null;
-  logFrom = existing ? 'stats' : (exId ? 'exercise' : 'home');
+  pushOrigin();
   const pool = exercises.filter(e=>typeOf(e.type).ready);
   /* A session outlives its exercise on purpose. Keep it selectable so
      it can still be corrected or deleted, and never let it silently
@@ -2505,14 +2529,14 @@ function openLog(exId, existing){
     }
     sessionsChanged();
     logKey = null;
-    logFrom === 'exercise' && cur ? openExercise(cur.id) : show('stats');
+    popOrigin();
   });
 
   const del = el('logDel');
   if(del) del.addEventListener('click', ()=>
     confirmTap(del, 'Tap again to delete', 'Delete session', ()=>{
       removeSession(existing);
-      show('stats');
+      popOrigin();
     }));
 
   show('log');
