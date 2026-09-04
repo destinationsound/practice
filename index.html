@@ -586,7 +586,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '7.1';
+const APP_VERSION = '7.2';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -2847,6 +2847,8 @@ css.textContent = `
   .liftHead .grp{font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;font-size:10px;color:var(--text-dim);}
   .restPill{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:20px;padding:6px 13px;font-family:var(--mono);font-size:12px;color:var(--text);margin:8px 0 14px;}
   .setGrid{display:grid;grid-template-columns:22px 1fr 56px 72px 30px;gap:7px 6px;align-items:center;}
+  .lvlCell{display:flex;flex-direction:column;gap:4px;min-width:0;}
+  .lvlCell input{width:100%;}
   .setGrid .hd{font-family:var(--display);text-transform:uppercase;letter-spacing:.1em;font-size:10px;color:var(--text-dim);padding-bottom:3px;}
   .setGrid .sn{font-family:var(--mono);font-size:13px;color:var(--text-dim);}
   .setGrid .pv{font-family:var(--mono);font-size:12px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -3336,8 +3338,16 @@ function renderLift(){
       const p = priorText(prior, si, m);
       let loadCell;
       if(m.measure === 'level'){
-        loadCell = `<select data-lv="${ii}.${si}">${m.ladder.map(r=>
-          `<option value="${esc(r)}"${r===st.level?' selected':''}>${esc(r)}</option>`).join('')}</select>`;
+        /* Selecting the weighted rung reveals a field for the added
+           weight — volume already counts it, there was just nowhere
+           to type it. */
+        loadCell = `<span class="lvlCell">
+          <select data-lv="${ii}.${si}">${m.ladder.map(r=>
+            `<option value="${esc(r)}"${r===st.level?' selected':''}>${esc(r)}</option>`).join('')}</select>
+          ${isWeighted(st.level)
+            ? `<input type="number" inputmode="decimal" data-ld="${ii}.${si}" value="${st.load}" placeholder="+${unitName().toLowerCase()}">`
+            : ''}
+        </span>`;
       } else if(m.measure === 'time'){
         loadCell = `<span class="pv" style="text-align:center">—</span>`;
       } else {
@@ -3417,16 +3427,28 @@ function renderLift(){
   }
 }
 
-el('liftBody').addEventListener('input', e=>{
-  const t = e.target, d = t.dataset;
+function editSet(t){
+  const d = t.dataset;
   const key = d.rp || d.ld || d.lv; if(!key) return;
   const [ii, si] = key.split('.').map(Number);
   const st = draft.items[ii].sets[si];
   if(d.rp) st.reps = t.value;
   if(d.ld) st.load = t.value;
-  if(d.lv) st.level = t.value;
+  if(d.lv){
+    /* Moving onto or off the weighted rung changes which fields the row
+       has, so the row has to be drawn again — otherwise the weight box
+       only appears after leaving and coming back. */
+    const was = isWeighted(st.level);
+    st.level = t.value;
+    if(!isWeighted(st.level)) st.load = '';
+    saveDraft();
+    if(was !== isWeighted(st.level)) return renderLift();
+  }
   saveDraft();
-});
+}
+el('liftBody').addEventListener('input', e=>editSet(e.target));
+/* a <select> does not always raise input on iOS */
+el('liftBody').addEventListener('change', e=>{ if(e.target.dataset.lv) editSet(e.target); });
 el('liftBody').addEventListener('click', e=>{
   const ck = e.target.closest('[data-ck]');
   if(ck){
