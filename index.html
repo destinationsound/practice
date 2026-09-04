@@ -119,6 +119,9 @@
   }
   .adh b{font-family:var(--mono);letter-spacing:0;color:var(--text);font-weight:400;}
   .row.dim .go{font-size:10px;font-family:var(--display);letter-spacing:.14em;text-transform:uppercase;}
+  .dayNav{display:flex;align-items:center;gap:10px;margin:0 0 12px;}
+  .dayNav .grp{flex:1;text-align:center;margin:0;}
+  .dayNav button[disabled]{opacity:.25;}
   .nothing{color:var(--text-dim);font-size:13px;padding:16px 0;border-bottom:1px solid var(--line);}
 
   .addbtn{width:100%;margin-top:24px;padding:16px;border:1px dashed var(--line);border-radius:2px;text-align:center;color:var(--text-dim);font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;font-size:13px;font-weight:600;}
@@ -349,7 +352,9 @@
     <div class="foot">
       <div class="rope"><i id="rope"></i></div>
       <div class="status"><span id="statusL"></span><b id="statusR"></b></div>
+      <button class="primary" id="blockDone" hidden>Done</button>
       <button class="primary" id="go">Start</button>
+      <button class="ghost" id="nextBlock" hidden>Skip to next block</button>
       <button class="ghost" id="pauseBtn" hidden>Pause</button>
     </div>
   </section>
@@ -586,7 +591,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '7.2';
+const APP_VERSION = '8.1';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -634,6 +639,11 @@ const catOf = id => CATS.find(c=>c.id === id) || CATS[0];
    practice has a dominant focus. Adding a type means adding an
    entry here; nothing in the shell changes. */
 const MT_DEFAULTS = {
+  /* Rounds is the original shape and is untouched. A circuit is an
+     ordered list of dumb blocks — timed, guided or counted — each
+     owning its own settings. Rest is just a timed block you name Rest. */
+  shape:'rounds',
+  blocks:[],
   min:2, max:4, rest:4, gap:.1,
   groups:{punch:true,kick:true,knee:true,elbow:false,defense:false},
   stance:'southpaw', level:2, flow:'mixed',
@@ -643,50 +653,92 @@ const TYPES = {
   muaythai:{
     name:'Muay Thai', category:'physical', accent:'#FFC40C', ink:'#1A1A1D', accentDark:'#C9A227', inkDark:'#231014',
     ready:true, kind:'timed', blurb:'Spoken combo callouts on a round timer',
-    line:s=>{ const d = s.detail || s; return d.rounds ? `${d.rounds} rounds · ${d.combos || 0} combos` : ''; },
+    line:s=>{
+      const d = s.detail || s;
+      if(d.blocks && d.blocks.length){
+        const done = d.blocks.filter(b=>b.done !== false).length;
+        const label = done === d.blocks.length
+          ? `${done} blocks`
+          : `${done} of ${d.blocks.length} blocks`;
+        return `${label} · ${d.combos || 0} combos`;
+      }
+      return d.rounds ? `${d.rounds} rounds · ${d.combos || 0} combos` : '';
+    },
     defaults:()=>JSON.parse(JSON.stringify(MT_DEFAULTS)),
-    summary:c=>[
+    summary:c=>c.shape === 'circuit'
+      ? [`${(c.blocks||[]).length} blocks`, fmt(circuitLength(c)),
+         c.stance === 'orthodox' ? 'Orthodox' : 'Southpaw'].join(' · ')
+      : [
       c.useRounds ? `${c.rounds} × ${fmt(c.roundLen)} rounds` : 'No round limit',
       `${c.min}–${c.max} strikes`,
       ['','Basics','Intermediate','Advanced'][c.level],
       c.stance === 'orthodox' ? 'Orthodox' : 'Southpaw'
     ].join(' · '),
-    facts:(c,done)=>[
+    facts:(c,done)=> c.shape === 'circuit' ? [
+      [(c.blocks||[]).length, 'Blocks'],
+      [fmt(circuitLength(c)), 'Length'],
+      [(c.blocks||[]).filter(b=>b.kind==='counted').reduce((n,b)=>n+(b.target||0),0) || '—', 'Counted reps'],
+      [done, 'Times done'],
+    ] : [
       [c.useRounds ? fmt(c.rounds*c.roundLen + (c.rounds-1)*c.breakLen) : '∞', 'Session length'],
       [c.rest+'s', 'Rest per combo'],
       [Object.values(c.groups).filter(Boolean).length, 'Weapon groups'],
       [done, 'Times done']
     ],
     fields:[
-      {kind:'section', label:'Combo'},
-      {kind:'slider', key:'min',  label:'Shortest combo', min:1, max:6, step:1,
+      {kind:'section', label:'Combo', when:c=>c.shape!=='circuit'},
+      {when:c=>c.shape!=='circuit', kind:'slider', key:'min',  label:'Shortest combo', min:1, max:6, step:1,
        after:c=>{ if(c.max < c.min) c.max = c.min; }},
-      {kind:'slider', key:'max',  label:'Longest combo',  min:1, max:8, step:1,
+      {when:c=>c.shape!=='circuit', kind:'slider', key:'max',  label:'Longest combo',  min:1, max:8, step:1,
        after:c=>{ if(c.min > c.max) c.min = c.max; }},
-      {kind:'slider', key:'rest', label:'Rest after each combo', min:1, max:15, step:.5,
+      {when:c=>c.shape!=='circuit', kind:'slider', key:'rest', label:'Rest after each combo', min:1, max:15, step:.5,
        fmt:v=>v.toFixed(1)+'s'},
-      {kind:'slider', key:'gap',  label:'Gap between strikes', min:0, max:1, step:.05,
+      {when:c=>c.shape!=='circuit', kind:'slider', key:'gap',  label:'Gap between strikes', min:0, max:1, step:.05,
        fmt:v=>v.toFixed(2)+'s'},
 
-      {kind:'chips', key:'flow', label:'Flow',
+      {when:c=>c.shape!=='circuit', kind:'chips', key:'flow', label:'Flow',
        options:[['library','Set combos'],['mixed','Mixed'],['free','Freestyle']]},
-      {kind:'note', text:'Set combos come from a list a coach would call. Freestyle builds new ones from which strikes actually feed into each other. Mixed alternates.'},
+      {when:c=>c.shape!=='circuit', kind:'note', text:'Set combos come from a list a coach would call. Freestyle builds new ones from which strikes actually feed into each other. Mixed alternates.'},
 
-      {kind:'chips', key:'level', label:'Level', type:'number',
+      {when:c=>c.shape!=='circuit', kind:'chips', key:'level', label:'Level', type:'number',
        options:[[1,'Basics'],[2,'Intermediate'],[3,'Advanced']]},
 
-      {kind:'multi', key:'groups', label:'Techniques', min:1,
+      {when:c=>c.shape!=='circuit', kind:'multi', key:'groups', label:'Techniques', min:1,
        options:[['punch','Punches'],['kick','Kicks'],['knee','Knees'],['elbow','Elbows'],['defense','Defense']]},
 
       {kind:'chips', key:'stance', label:'Stance',
        options:[['orthodox','Orthodox'],['southpaw','Southpaw']]},
 
-      {kind:'chips', key:'useRounds', label:'Rounds', type:'boolean',
+      {kind:'chips', key:'useRounds', label:'Rounds', type:'boolean', when:c=>c.shape!=='circuit',
        options:[[true,'Round timer'],[false,'Endless']]},
-      {kind:'slider', key:'roundLen', label:'Round length',        min:60, max:360, step:30, fmt:v=>fmt(v)},
-      {kind:'slider', key:'breakLen', label:'Rest between rounds', min:15, max:180, step:15, fmt:v=>fmt(v)},
-      {kind:'slider', key:'rounds',   label:'Rounds',              min:1,  max:12,  step:1},
+      {kind:'slider', key:'roundLen', label:'Round length',        min:60, max:360, step:30, fmt:v=>fmt(v), when:c=>c.shape!=='circuit'},
+      {kind:'slider', key:'breakLen', label:'Rest between rounds', min:15, max:180, step:15, fmt:v=>fmt(v), when:c=>c.shape!=='circuit'},
+      {kind:'slider', key:'rounds',   label:'Rounds',              min:1,  max:12,  step:1, when:c=>c.shape!=='circuit'},
     ],
+    /* Modelled on the movement list, which nobody found confusing: the
+       editor lists blocks, and each block is edited on its own screen. */
+    editorHTML:c=> c.shape !== 'circuit' ? '' : `
+      <h2 class="sec">Blocks</h2>
+      <div id="blockList"></div>
+      <button class="addbtn" id="addBlock">+ Add block</button>`,
+    editorWire:(c, api)=>{
+      if(c.shape !== 'circuit') return;
+      c.blocks = c.blocks || [];
+      const paint = ()=>{
+        el('blockList').innerHTML = c.blocks.length ? c.blocks.map((b,i)=>
+          rowHTML({attr:`data-blk="${i}"`, accent:blockAccent(b),
+            name:b.label, nameStyle:'font-size:17px',
+            sub:blockSummary(b), go:'›'})).join('')
+          : `<p class="note" style="margin:0">No blocks yet.</p>`;
+      };
+      paint();
+      blockRepaint = paint;
+      el('blockList').addEventListener('click', e=>{
+        const r = e.target.closest('[data-blk]'); if(!r) return;
+        openBlock(c, +r.dataset.blk);
+      });
+      el('addBlock').addEventListener('click', ()=>{ addBlockCfg = c; show('blockadd'); });
+    },
 
   },
   run:{      name:'Running',        category:'physical', accent:'#FF7A2F', ink:'#1A1A1D', accentDark:'#E08145', inkDark:'#2A1408', kind:'timed',  blurb:'Distance, pace and splits'},
@@ -904,7 +956,13 @@ const hhmm = sec => { const h=Math.floor(sec/3600), m=Math.round((sec%3600)/60);
 boot();
 let S = TYPES.muaythai.defaults();
 const loadCfg = ex => { S = Object.assign(typeOf(ex.type).defaults(), JSON.parse(JSON.stringify(ex.cfg))); };
+/* A scripted combo stores catalogue ids, never words — so the same
+   combo reads "left hook" in orthodox and "right hook" in southpaw. */
+const strikeById = id => CAT.find(t=>t.k === id);
+const comboFromIds = ids => (ids || []).map(strikeById).filter(Boolean);
+
 const WORDS = {'1':'one','2':'two','3':'three','4':'four','5':'five','6':'six'};
+const circuitLength = c => (c.blocks||[]).reduce((n,b)=>n + (b.kind==='counted' ? 90 : (b.secs||0)), 0);
 const spoken = (t,L) => (G.callouts === 'numbers' && t.num) ? (t.nsay || WORDS[t.num]) : t.label(L);
 const sides = () => S.stance === 'orthodox' ? {lead:'left', rear:'right'} : {lead:'right', rear:'left'};
 
@@ -1011,24 +1069,33 @@ function lastDone(id){
 /* A day is either kept or it is not — checking twice does not make it
    truer, it just inflates the streak. So a check-off is idempotent for
    the day, and tapping again takes it back rather than adding another. */
-const doneToday = ex => !!ex && didOn(ex.id, new Date());
+const doneOn = (ex, date) => !!ex && didOn(ex.id, date || new Date());
+const doneToday = ex => doneOn(ex, new Date());
 
-function checkOff(ex, when){
+/* `date` is the day being ticked, which is not always today — the home
+   list pages back so a day you forgot can still be filled in. */
+function checkOff(ex, date){
   const e = ex || cur;
-  if(!e || doneToday(e)) return false;
-  if(e.cfg && e.cfg.timed){ openLog(e.id, null); return false; }
-  commitSession(makeSession(e, {start: when || Date.now(), dur: 0, source:'app'}));
+  if(!e) return false;
+  const day = date ? dayStart(date) : null;
+  const isToday = !day || day.getTime() === dayStart(new Date()).getTime();
+  if(doneOn(e, day || new Date())) return false;
+  if(e.cfg && e.cfg.timed){ openLog(e.id, null, day); return false; }
+  /* mid-morning on a backfilled day, so it sorts sensibly among the rest */
+  const when = isToday ? Date.now() : day.getTime() + 10*3600000;
+  commitSession(makeSession(e, {start: when, dur: 0, source: isToday ? 'app' : 'manual'}));
   return true;
 }
-function uncheckToday(ex){
+function uncheckOn(ex, date){
   const e = ex || cur;
   if(!e) return;
-  const a = dayStart(new Date()), b = addDays(a, 1);
-  const todays = sessions.filter(s=>s.exerciseId === e.id && inRange(s, a, b));
-  if(!todays.length) return;
-  sessions = sessions.filter(s=>!todays.includes(s));
+  const a = dayStart(date || new Date()), b = addDays(a, 1);
+  const hits = sessions.filter(s=>s.exerciseId === e.id && inRange(s, a, b));
+  if(!hits.length) return;
+  sessions = sessions.filter(s=>!hits.includes(s));
   sessionsChanged();
 }
+const uncheckToday = ex => uncheckOn(ex, new Date());
 TYPES.task.open = ()=>{
   doneToday(cur) ? uncheckToday(cur) : checkOff(cur);
   backToExercise();
@@ -1128,6 +1195,7 @@ function show(name){
     b.setAttribute('aria-current', on ? 'page' : 'false');
   });
   if(ROOTS.includes(name)) lastRoot = name;
+  if(name !== 'home' && name !== 'log' && name !== 'exercise') dayOffset = 0;
   const sc = el('s-'+name).querySelector('.scroll');
   if(sc) sc.scrollTop = 0;
 }
@@ -1176,23 +1244,37 @@ function balanceBlock(){
     </div>`).join('')}
   </div>`;
 }
+/* The day the home list is showing. Today is 0; a week back is
+   reachable so a day you forgot to tick can still be filled in.
+   Tomorrow is visible for planning, but nothing is logged into it. */
+let dayOffset = 0;
+const DAY_BACK = -6;
+const viewDay = ()=> addDays(dayStart(new Date()), dayOffset);
+const dayTitle = ()=>
+  dayOffset === 0 ? 'Today'
+  : dayOffset === -1 ? 'Yesterday'
+  : dayOffset === 1 ? 'Tomorrow'
+  : dWeek(viewDay());
+
 function todayBlock(){
-  const now = new Date();
-  const planned = plannedFor(now);
   if(!exercises.length) return '';
+  const d = viewDay();
+  const planned = plannedFor(d);
+  const left = planned.filter(e=>!didOn(e.id, d)).length;
+  const head = `<div class="dayNav">
+      <button class="iconbtn" id="dayBack" ${dayOffset <= DAY_BACK ? 'disabled' : ''} aria-label="Previous day">‹</button>
+      <h2 class="grp">${esc(dayTitle())}${planned.length && !left ? ' · all done' : ''}</h2>
+      <button class="iconbtn" id="dayFwd" ${dayOffset >= 1 ? 'disabled' : ''} aria-label="Next day">›</button>
+    </div>`;
   if(!planned.length){
-    /* Hiding this when nothing is scheduled meant nobody ever found
-       out schedules existed. An empty rest day is worth saying. */
     const anyScheduled = exercises.some(e=>e.sched && e.sched.days && e.sched.days.length);
-    return `<h2 class="grp" style="margin-top:0">Today</h2>
-      <div class="nothing">${anyScheduled
+    return head + `<div class="nothing">${anyScheduled
         ? 'Nothing scheduled — rest day.'
         : 'Nothing scheduled yet. Open an exercise, tap Edit, and pick your repeat days.'}</div>`;
   }
-  const left = planned.filter(e=>!didOn(e.id, now)).length;
-  return `<h2 class="grp" style="margin-top:0">Today${left ? '' : ' · all done'}</h2>`
+  return head
     + planned.map(e=>{
-        const t = typeOf(e.type), done = didOn(e.id, now);
+        const t = typeOf(e.type), done = didOn(e.id, d);
         return rowHTML({
           cls: 'today' + (done?' isdone':''), attr: `data-e="${e.id}"`,
           accent: t.accent, name: e.name,
@@ -1220,16 +1302,25 @@ function renderHome(){
     + `<button class="addbtn" id="newEx">+ Add new</button>`;
 }
 el('homeBody').addEventListener('click', e=>{
+  if(e.target.closest('#dayBack')){ if(dayOffset > DAY_BACK){ dayOffset--; renderHome(); } return; }
+  if(e.target.closest('#dayFwd')){ if(dayOffset < 1){ dayOffset++; renderHome(); } return; }
   if(e.target.closest('#newEx')){ renderTypes(); return show('newtype'); }
   const b = e.target.closest('[data-e]'); if(!b) return;
-  /* Once it is done for the day, tapping it should let you fix what was
-     recorded rather than offering to record it again. */
   pushOrigin();
   if(b.classList.contains('today')){
-    const a = dayStart(new Date()), z = addDays(a, 1);
-    const rec = sessions.filter(x=>x.exerciseId === b.dataset.e && inRange(x, a, z))
+    const d = viewDay(), z = addDays(d, 1);
+    /* Already recorded: open it so you can correct it rather than log it twice. */
+    const rec = sessions.filter(x=>x.exerciseId === b.dataset.e && inRange(x, d, z))
                         .sort((x,y)=>y.start - x.start)[0];
     if(rec) return editSession(rec);
+    /* A past day cannot be started, only filled in. Tomorrow is a plan,
+       so it opens the exercise like any other row. */
+    if(dayOffset < 0){
+      const ex = exercises.find(x=>x.id === b.dataset.e);
+      if(ex && typeOf(ex.type).kind === 'checkoff'){ originStack.pop(); checkOff(ex, d); return renderHome(); }
+      cur = ex || cur;
+      return openLog(b.dataset.e, null, d);
+    }
   }
   openExercise(b.dataset.e);
 });
@@ -1647,6 +1738,13 @@ TYPES.muaythai.templates = [
   {name:'Shadow boxing', blurb:'Basics only, slow and deliberate',
    cfg:{flow:'library', level:1, min:2, max:3, rest:7, gap:.2, rounds:3, roundLen:180,
         groups:{punch:true,kick:true,knee:false,elbow:false,defense:false}}},
+  {name:'Circuit', blurb:'A sequence you build — rope, bag work, counted sets',
+   cfg:{shape:'circuit', blocks:[
+     {kind:'timed',   label:'Jump rope', secs:180},
+     {kind:'timed',   label:'Rest',      secs:60},
+     {kind:'guided',  label:'Bag work',  secs:180, source:'random'},
+     {kind:'counted', label:'Kicks',     target:100},
+   ]}},
   {name:'Class with coaches', blurb:'Training you log by hand afterwards', logOnly:true, cfg:{}},
 ];
 
@@ -1711,7 +1809,7 @@ function startMed(){
   running = true;
   runToken++;
   resetPause();
-  live = {start: Date.now(), completed:false};
+  live = {start: Date.now(), mark: workedMs(), completed:false};
   holdScreen();
 
   scheduleSit(S.length*60, true);
@@ -1904,13 +2002,39 @@ let running = false, round = 1, remain = 0, wakeLock = null, live = null;
    milliseconds since it last ran, which is zero while paused — a
    countdown that subtracts dt therefore freezes for free instead of
    each timer remembering to check a flag. */
+/* ── two clocks, two jobs ───────────────────────────────────────
+   Date.now() records WHEN something happened. It is what a session
+   stores and what you read back as a date — but it is the wall clock,
+   so an NTP correction, a timezone change or DST can move it, and it
+   can run backwards.
+
+   mono() measures HOW LONG. It counts from page load and is never
+   adjusted. Every duration and every countdown reads it; nothing else
+   does. */
+const mono = () => (typeof performance !== 'undefined' && performance.now)
+  ? performance.now() : Date.now();
+
+/* A countdown holds a span and reports what is left of it, measured
+   against worked time. Nothing accumulates, so no loop — however busy
+   or late — can make it drift, and pause needs no bookkeeping. */
+function countdown(ms){
+  const startedAt = workedMs();
+  let span = ms;
+  return {
+    left(){ return Math.max(0, span - (workedMs() - startedAt)); },
+    secs(){ return Math.round(this.left() / 1000); },
+    done(){ return this.left() <= 0; },
+    add(extra){ span += extra; },
+  };
+}
+
 const tickers = new Map();
 function ticker(id, fn, ms, opts){
   stopTicker(id);
   const o = opts || {};
-  let last = Date.now();
+  let last = mono();
   const beat = ()=>{
-    const now = Date.now();
+    const now = mono();
     if(paused && !o.whilePaused){ last = now; return; }
     const dt = now - last; last = now;
     fn(paused ? 0 : dt);
@@ -1932,13 +2056,21 @@ function gate(){ return paused ? new Promise(r=>resumers.push(r)) : Promise.reso
 function setPaused(on){
   if(paused === on) return;
   paused = on;
-  if(on){ pauseStarted = Date.now(); }
+  if(on){ pauseStarted = mono(); }
   else {
-    pausedTotal += Date.now() - pauseStarted;
+    pausedTotal += mono() - pauseStarted;
     const w = resumers; resumers = []; w.forEach(f=>f());
   }
 }
-const workedSecs = startMs => Math.max(0, Math.round((Date.now() - startMs - pausedTotal)/1000));
+/* Milliseconds of running time, excluding every pause including the
+   one currently open. The single source of truth for elapsed time. */
+function workedMs(){
+  return mono() - pausedTotal - (paused ? mono() - pauseStarted : 0);
+}
+/* startMs is a wall-clock stamp, but the difference is a duration, so
+   subtracting monotonic pause durations from it is sound. */
+/* takes a monotonic mark from workedMs(), never a wall timestamp */
+const workedSecs = startMark => Math.max(0, Math.round((workedMs() - startMark)/1000));
 function resetPause(){ paused = false; pausedTotal = 0; resumers = []; }
 const stage=()=>el('stage'), go=()=>el('go');
 
@@ -1956,9 +2088,10 @@ function start(){
   round = 1;
   const tok = ++runToken;
   resetPause();
-  live = {start: Date.now(), rounds:0, combos:0, strikes:0};
+  live = {start: Date.now(), mark: workedMs(), rounds:0, combos:0, strikes:0, blocks:[]};
   go().textContent = 'Stop'; go().classList.add('stop');
   const pb = el('pauseBtn'); pb.hidden = false; pb.textContent = 'Pause';
+  el('nextBlock').hidden = S.shape !== 'circuit';
   holdScreen();
   loop(tok);
 }
@@ -1968,6 +2101,8 @@ function stop(){
   setPaused(false);
   cancelWaits();
   el('pauseBtn').hidden = true;
+  el('nextBlock').hidden = true;
+  if(window.releaseBlockWait) releaseBlockWait();
   try{ speechSynthesis.cancel(); }catch(e){}
   stopClock();
   setRope(0,0);
@@ -1982,6 +2117,7 @@ function stop(){
     ? `Too short to log (${lastDiscard}s)` : 'Logged';
 }
 async function loop(tok){
+  if(S.shape === 'circuit' && TYPES.muaythai.runCircuit) return TYPES.muaythai.runCircuit(tok);
   while(alive(tok)){
     if(S.useRounds){
       el('phase').textContent = `Round ${round} of ${S.rounds}`;
@@ -2035,15 +2171,12 @@ async function callout(tok){
   if(!alive(tok)) return;
   highlight(-1);
   el('statusL').textContent = 'Reset';
-  /* driven by the loop rather than a CSS transition, so it freezes too */
   const total = S.rest*1000;
-  let left = total;
-  while(alive(tok) && left > 0){
-    await wait(100);
-    if(paused) continue;
-    left -= 100;
-    el('statusR').textContent = (Math.max(0,left)/1000).toFixed(1);
-    setRopeAt(left/total);
+  const cd = countdown(total);
+  while(alive(tok) && !cd.done()){
+    await wait(80);
+    el('statusR').textContent = (cd.left()/1000).toFixed(1);
+    setRopeAt(cd.left()/total);
   }
   el('statusR').textContent = '';
   setRopeAt(0);
@@ -2074,15 +2207,13 @@ function setRope(seconds, to){
   }
 }
 function startClock(sec){
-  remain = sec;
-  let acc = 0;
-  ticker('round', dt=>{
-    acc += dt;
-    while(acc >= 1000 && remain > 0){ acc -= 1000; remain--; }
-    el('clock').textContent = fmt(Math.max(0, remain));
+  const cd = countdown(sec * 1000);
+  ticker('round', ()=>{
+    remain = cd.secs();
+    el('clock').textContent = fmt(remain);
     el('clock').classList.toggle('warn', remain <= 10);
-    if(remain <= 0) stopTicker('round');
-  }, 250);
+    if(cd.done()) stopTicker('round');
+  }, 200, {whilePaused:true});
 }
 function stopClock(){ stopTicker('round'); el('clock').classList.remove('warn'); }
 
@@ -2092,11 +2223,13 @@ function endSession(){
   const type = cur ? cur.type : 'muaythai';
   commitSession(makeSession(cur, {
     start: s.start,
-    dur: workedSecs(s.start),
+    dur: workedSecs(s.mark != null ? s.mark : 0),
     source: 'app',
     detail: type === 'meditate'
       ? {completed: s.completed === true}
-      : {rounds: s.rounds, combos: s.combos, strikes: s.strikes}
+      : (s.blocks && s.blocks.length)
+        ? {blocks: s.blocks.filter(Boolean), combos: s.combos, strikes: s.strikes}
+        : {rounds: s.rounds, combos: s.combos, strikes: s.strikes}
   }));
 }
 
@@ -2106,6 +2239,7 @@ go().addEventListener('click', ()=>{
   start();
 });
 el('pauseBtn').addEventListener('click', ()=>{
+  if(window.onCircuitPause) setTimeout(()=>onCircuitPause(!paused), 0);
   if(!running) return;
   const to = !paused;
   setPaused(to);
@@ -2421,7 +2555,9 @@ const pad2 = n => String(n).padStart(2,'0');
 const dateVal = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
 const timeVal = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 
-function openLog(exId, existing){
+let logDay = null;
+function openLog(exId, existing, day){
+  logDay = day || null;
   logKey = existing ? existing.start : null;
   pushOrigin();
   const pool = exercises.filter(e=>typeOf(e.type).ready);
@@ -2434,7 +2570,9 @@ function openLog(exId, existing){
     return show('log');
   }
   const mins = existing ? Math.max(1, Math.round(existing.dur/60)) : 60;
-  const when = existing ? new Date(existing.start) : new Date(Date.now() - mins*60000);
+  const when = existing ? new Date(existing.start)
+    : logDay ? new Date(logDay.getTime() + 10*3600000)
+    : new Date(Date.now() - mins*60000);
   const chosen = existing ? existing.exerciseId : (exId || pool[0].id);
   const isApp = existing && existing.source !== 'manual';
   const subject = exercises.find(e=>e.id === (existing ? existing.exerciseId : (exId || chosen)));
@@ -3191,7 +3329,7 @@ function wireNewMove(){
 }
 
 /* ── the session ──────────────────────────────────────────── */
-let draft = null, liftStart = 0;
+let draft = null, liftStart = 0, liftMark = 0;
 const K_DRAFT = 'practice.liftdraft.v1';
 
 /* how a strength session reads in Stats and in the calendar export */
@@ -3293,6 +3431,9 @@ function openLift(backdate){
   let awayMs = 0;
   if(saved && saved.exerciseId === cur.id && !!saved.backdate === !!backdate){
     draft = saved; liftStart = saved.start;
+    /* Away time spans app restarts, so it must be measured on the wall
+       clock — the monotonic clock resets to zero on load. The worked
+       total is then carried onto a monotonic mark for everything after. */
     awayMs = Math.max(0, Date.now() - (saved.touched || saved.start));
   } else {
     liftStart = backdate ? Date.now() - 60*60000 : Date.now();
@@ -3317,9 +3458,10 @@ function openLift(backdate){
   renderLift(); show('lift');
   if(!backdate){
     resetPause();
-    pausedTotal = awayMs;    // time with the app closed is not time worked
+    /* back-date the mark by whatever was already worked before the app closed */
+    liftMark = workedMs() - Math.max(0, (Date.now() - liftStart) - awayMs);
     startElapsed();
-  } else el('title').textContent = 'Past workout';
+  } else { liftMark = workedMs(); el('title').textContent = 'Past workout'; }
 }
 const K_PAST = 'practice.liftpast.v1';
 const saveDraft = ()=>{
@@ -3527,37 +3669,36 @@ function applyAutofill(){
 /* Holds the time remaining rather than an end timestamp. The ticker
    reports zero elapsed while paused, so the countdown freezes with no
    special case — the old version had to inch restEnd forward by hand. */
-let restLeft = 0;
+let restCd = null;
 function paintRest(){
-  el('restT').textContent = fmt(Math.max(0, Math.round(restLeft/1000)));
+  el('restT').textContent = fmt(restCd ? restCd.secs() : 0);
 }
 function startRest(item){
-  restLeft = item.rest * 1000;
+  restCd = countdown(item.rest * 1000);
   el('restN').textContent = 'Rest · ' + item.name;
   bar.classList.add('on');
-  ticker('rest', dt=>{
-    restLeft -= dt;
+  ticker('rest', ()=>{
     paintRest();
-    if(restLeft <= 0){
+    if(restCd.done()){
       stopTicker('rest');
       try{ ensureAudio(); bowl(actx.currentTime + 0.05, 0.7, null); }catch(e){}
       el('restN').textContent = 'Go';
       setTimeout(()=>{ if(!tickers.has('rest')) bar.classList.remove('on'); }, 2500);
     }
-  }, 200);
+  }, 200, {whilePaused:true});
 }
 function stopRest(){
   stopTicker('rest');
   bar.classList.remove('on');
 }
 el('restSkip').addEventListener('click', stopRest);
-el('restAdd').addEventListener('click', ()=>{ restLeft += 30000; paintRest(); });
+el('restAdd').addEventListener('click', ()=>{ if(restCd) restCd.add(30000); paintRest(); });
 
 function startElapsed(){
   /* runs while paused so it can say so */
   ticker('elapsed', ()=>{
     if(screen !== 'lift') return;
-    el('title').textContent = paused ? 'Paused' : fmt(workedSecs(liftStart));
+    el('title').textContent = paused ? 'Paused' : fmt(workedSecs(liftMark));
   }, 1000, {whilePaused:true});
 }
 function stopElapsed(){ stopTicker('elapsed'); el('title').textContent = 'Workout'; }
@@ -3600,7 +3741,7 @@ function finishLift(){
   setPaused(false);          // close any open pause before measuring
   stopRest(); stopElapsed();
   const back = draft.backdate;
-  const dur = back ? (draft.mins || 60)*60 : workedSecs(liftStart);
+  const dur = back ? (draft.mins || 60)*60 : workedSecs(liftMark);
   const start = back ? draft.start : liftStart;
   const end = start + dur*1000;
 
@@ -3720,7 +3861,6 @@ makeScreen('write', {session:true, title:'Journal', html:`
 const K_DRAFT = 'practice.writedraft.v1';
 let editingEntry = null;   // the session being edited, or null for a new one
 let entryStart = 0;
-let writeEndsAt = 0;
 
 /* Time worked, the same rule the timed types follow. The clock accrues
    while you are typing and stops itself after a stretch of nothing, so
@@ -3729,14 +3869,14 @@ const IDLE_AFTER = 45000;
 let wrote = 0, lastKey = 0, idleTick = null;
 
 function beginWriting(){
-  const now = Date.now();
+  const now = mono();
   if(lastKey && now - lastKey < IDLE_AFTER) wrote += now - lastKey;
   lastKey = now;
   clearTimeout(idleTick);
   idleTick = setTimeout(()=>{ lastKey = 0; }, IDLE_AFTER);
 }
 function writtenSecs(){
-  const now = Date.now();
+  const now = mono();
   const tail = (lastKey && now - lastKey < IDLE_AFTER) ? now - lastKey : 0;
   return Math.round((wrote + tail)/1000);
 }
@@ -3834,13 +3974,12 @@ function stopWriteTimer(){
 function startWriteTimer(){
   const v = +el('writeMins').value;
   if(!v) return;
-  writeEndsAt = Date.now() + v*60000;
+  const cd = countdown(v * 60000);
   const b = el('writeTimerGo');
   b.hidden = false; b.classList.add('on');
   ticker('writeLimit', ()=>{
-    const left = Math.max(0, Math.round((writeEndsAt - Date.now())/1000));
-    b.textContent = fmt(left);
-    if(left <= 0){
+    b.textContent = fmt(cd.secs());
+    if(cd.done()){
       stopWriteTimer();
       b.textContent = 'Time';
       try{ ensureAudio(); bowl(actx.currentTime + 0.05, 0.6, null); }catch(e){}
@@ -3929,6 +4068,433 @@ document.addEventListener('click', e=>{
 })();
 /* ╔══════════════════════════════════════════════════════════════╗
    ║  JOURNAL MODULE — END                                        ║
+   ╚══════════════════════════════════════════════════════════════╝ */
+
+/* ╔══════════════════════════════════════════════════════════════╗
+   ║  CIRCUIT MODULE — START                                      ║
+   ║  Adds the circuit shape to Muay Thai: a list of dumb blocks,  ║
+   ║  each edited on its own screen. Removing this block returns   ║
+   ║  Muay Thai to rounds only; nothing else depends on it.        ║
+   ╚══════════════════════════════════════════════════════════════╝ */
+(function(){
+
+const css = document.createElement('style');
+css.textContent = `
+  .blkKind{display:flex;flex-direction:column;gap:10px;margin-top:4px;}
+  .blkKind button{
+    text-align:left;border:1px solid var(--line);border-radius:2px;padding:15px 16px;
+  }
+  .blkKind button:active{background:var(--surface);}
+  .blkKind .t{
+    font-family:var(--display);text-transform:uppercase;letter-spacing:.1em;
+    font-size:15px;font-weight:700;display:block;
+  }
+  .blkKind .d{color:var(--text-dim);font-size:13px;display:block;margin-top:5px;line-height:1.4;}
+  .comboRow{
+    width:100%;display:flex;align-items:center;gap:12px;
+    padding:14px 0;border-bottom:1px solid var(--line);text-align:left;
+  }
+  .comboRow .n{font-family:var(--mono);font-size:12px;color:var(--text-dim);width:1.3em;flex:none;}
+  .comboRow .s{flex:1;min-width:0;font-size:15px;}
+  .comboRow .x{color:var(--text-dim);font-size:17px;flex:none;}
+  .pickGrid{display:flex;flex-wrap:wrap;gap:7px;margin-top:2px;}
+  .pickGrid button{
+    border:1px solid var(--line);border-radius:2px;padding:10px 12px;font-size:14px;
+  }
+  .pickGrid button:active{background:var(--surface);}
+  .draftBar{
+    position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--line);
+    padding:12px 0;margin-top:18px;
+  }
+  .draftBar .cur{font-size:15px;min-height:22px;margin-bottom:10px;}
+  .draftBar .cur em{color:var(--text-dim);font-style:normal;}
+  .jumpList{width:100%;}
+  .jumpRow{
+    width:100%;display:flex;align-items:center;gap:12px;text-align:left;
+    padding:13px 0;border-bottom:1px solid var(--line);
+  }
+  .jumpRow .n{font-family:var(--mono);font-size:12px;color:var(--text-dim);width:1.6em;flex:none;}
+  .jumpRow .l{flex:1;min-width:0;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .jumpRow .d{font-family:var(--mono);font-size:12px;color:var(--text-dim);flex:none;}
+  .jumpRow.now .l{font-weight:700;}
+  .jumpRow.past{opacity:.45;}
+`;
+document.head.appendChild(css);
+
+makeScreen('blockadd', {title:'Add block'});
+makeScreen('block',    {title:'Block'});
+makeScreen('combo',    {title:'Combo'});
+
+/* These sit on top of the editor, which holds an unsaved draft — the
+   origin stack can return to a screen but cannot rebuild one, so they
+   register an explicit way back instead. */
+const backToEditor = ()=>{
+  if(editing && editing.ex) return openEditor(editing.ex, editing.isNew);
+  goRoot();
+};
+BACKTO.blockadd = backToEditor;
+BACKTO.block    = backToEditor;
+BACKTO.combo    = ()=> blkCfg ? openBlock(blkCfg, blkIndex) : backToEditor();
+
+/* ── shared look-ups the editor needs ───────────────────────── */
+const KINDS = {
+  timed:   {name:'Timed',    accent:'#12BFA6', blurb:'Runs for a set time — rope, shadow boxing, a rest'},
+  guided:  {name:'Bag work', accent:'#FFC40C', blurb:'Calls combos aloud, random or a script you write'},
+  counted: {name:'Counted',  accent:'#6C5CE7', blurb:'Shows a target and waits for you to tap done'},
+};
+window.blockAccent  = b => (KINDS[b.kind] || KINDS.timed).accent;
+window.blockSummary = b => b.kind === 'counted'
+  ? `Counted · ${b.target} reps`
+  : b.kind === 'guided'
+    ? `Bag work · ${fmt(b.secs)} · ${b.source === 'script' ? `${(b.combos||[]).length} combos` : 'random'}`
+    : `Timed · ${fmt(b.secs)}`;
+window.blockRepaint = ()=>{};
+window.addBlockCfg = null;
+
+/* ── choosing a kind ────────────────────────────────────────── */
+el('blockaddBody').innerHTML =
+  `<p class="note" style="margin:0 0 16px">Every block is one simple thing. Build a round by adding a bag work block and a rest block after it.</p>
+   <div class="blkKind">` +
+  Object.keys(KINDS).map(k=>
+    `<button data-kind="${k}"><span class="t">${esc(KINDS[k].name)}</span><span class="d">${esc(KINDS[k].blurb)}</span></button>`
+  ).join('') + `</div>`;
+
+el('blockaddBody').addEventListener('click', e=>{
+  const b = e.target.closest('[data-kind]'); if(!b || !addBlockCfg) return;
+  const k = b.dataset.kind;
+  const fresh = k === 'counted' ? {kind:'counted', label:'Kicks', target:100}
+    : k === 'guided' ? {kind:'guided', label:'Bag work', secs:180, source:'random', order:'inorder', combos:[]}
+    : {kind:'timed', label:'Rope', secs:180};
+  addBlockCfg.blocks.push(fresh);
+  saveEx(); blockRepaint();
+  openBlock(addBlockCfg, addBlockCfg.blocks.length - 1);
+});
+
+/* ── one block, on its own screen ───────────────────────────── */
+let blkCfg = null, blkIndex = -1;
+
+window.openBlock = function(cfg, i){
+  blkCfg = cfg; blkIndex = i;
+  const b = cfg.blocks[i];
+  const isG = b.kind === 'guided', isC = b.kind === 'counted';
+  el('blockBody').innerHTML = `
+    <p class="eyebrow">${esc(KINDS[b.kind].name)}</p>
+    <h2 class="sec" style="margin-top:10px">Name</h2>
+    <input type="text" id="blkName" value="${esc(b.label)}" maxlength="28" autocomplete="off">
+
+    ${isC ? `
+      <h2 class="sec">Target</h2>
+      <div class="field"><label>Reps</label><span class="val" id="blkTargetv">${b.target}</span></div>
+      <input type="range" id="blkTarget" min="5" max="300" step="5" value="${b.target}">`
+    : `
+      <h2 class="sec">Length</h2>
+      <div class="field"><label>Time</label><span class="val" id="blkSecsv">${fmt(b.secs)}</span></div>
+      <input type="range" id="blkSecs" min="30" max="1800" step="30" value="${b.secs}">`}
+
+    ${!isG ? '' : `
+      <h2 class="sec">Combos</h2>
+      <div class="chips" id="blkSource">
+        <button class="chip" data-s="random">Random</button>
+        <button class="chip" data-s="script">Scripted</button>
+      </div>
+      <div id="blkCombo"></div>`}
+
+    <button class="primary" id="blkDone" style="margin-top:30px">Done</button>
+    <button class="ghost danger" id="blkDel">Remove block</button>
+    <button class="ghost" id="blkDup">Duplicate</button>`;
+
+  const bind = (id, key, fmtFn)=>{
+    const inp = el(id); if(!inp) return;
+    inp.addEventListener('input', ()=>{
+      b[key] = +inp.value;
+      el(id+'v').textContent = fmtFn(b[key]);
+      saveEx();
+    });
+  };
+  bind('blkSecs','secs', v=>fmt(v));
+  bind('blkTarget','target', v=>v);
+  el('blkName').addEventListener('input', e=>{ b.label = e.target.value.trim() || 'Block'; saveEx(); });
+
+  if(isG){
+    const paintSource = ()=>{
+      setChips('blkSource', x=>x.dataset.s === b.source);
+      el('blkCombo').innerHTML = b.source === 'random'
+        ? `<p class="note">Uses the combo engine — it builds fresh combos from strikes that actually feed into each other.</p>`
+        : (b.combos && b.combos.length
+            ? b.combos.map((ids,ci)=>`
+                <button class="comboRow" data-combo="${ci}">
+                  <span class="n">${ci+1}</span>
+                  <span class="s">${esc(comboText(ids))}</span>
+                  <span class="x">›</span>
+                </button>`).join('')
+            : `<p class="note" style="margin:0">No combos yet.</p>`)
+          + `<button class="addbtn" id="addCombo">+ Add combo</button>
+             <h2 class="sec">Order</h2>
+             <div class="chips" id="blkOrder">
+               <button class="chip" data-o="inorder">In order</button>
+               <button class="chip" data-o="mix">Mix</button>
+             </div>
+             <p class="note">In order drills them as a sequence. Mix shuffles so you cannot anticipate.</p>`;
+      if(b.source === 'script'){
+        setChips('blkOrder', x=>x.dataset.o === (b.order || 'inorder'));
+        el('blkOrder').addEventListener('click', ev=>{
+          const x = ev.target.closest('.chip'); if(!x) return;
+          b.order = x.dataset.o; saveEx(); paintSource();
+        });
+        el('addCombo').addEventListener('click', ()=>openCombo(b, -1));
+      }
+    };
+    /* bound once per open — paintSource runs again on every toggle */
+    el('blkCombo').addEventListener('click', ev=>{
+      const r = ev.target.closest('[data-combo]'); if(!r) return;
+      openCombo(b, +r.dataset.combo);
+    });
+    paintSource();
+    el('blkSource').addEventListener('click', ev=>{
+      const x = ev.target.closest('.chip'); if(!x) return;
+      b.source = x.dataset.s; saveEx(); paintSource();
+    });
+  }
+
+  el('blkDone').addEventListener('click', backToEditor);
+  el('blkDup').addEventListener('click', ()=>{
+    cfg.blocks.splice(i + 1, 0, JSON.parse(JSON.stringify(b)));
+    saveEx(); backToEditor();
+  });
+  el('blkDel').addEventListener('click', ()=>
+    confirmTap(el('blkDel'), 'Tap again to remove', 'Remove block', ()=>{
+      cfg.blocks.splice(i, 1);
+      saveEx(); backToEditor();
+    }));
+
+  show('block');
+};
+
+/* ── building a combo from the catalogue ────────────────────── */
+const comboText = ids => comboFromIds(ids).map(t=>t.label(sides())).join(' · ') || '—';
+let cmbBlock = null, cmbIndex = -1, cmbDraft = [];
+
+function openCombo(block, ci){
+  cmbBlock = block; cmbIndex = ci;
+  cmbDraft = ci >= 0 ? (block.combos[ci] || []).slice() : [];
+  paintCombo();
+  show('combo');
+}
+/* comboBody is created once and reused. Binding inside the paint added
+   a fresh listener every visit, so the third time a tap pushed three
+   strikes. The container binds once; the paint only redraws. */
+el('comboBody').addEventListener('click', e=>{
+  const a = e.target.closest('[data-add]');
+  if(!a || screen !== 'combo') return;
+  cmbDraft.push(a.dataset.add);
+  paintCurrent();
+});
+function paintCurrent(){
+  const cur = el('cmbCur'); if(!cur) return;
+  cur.innerHTML = cmbDraft.length
+    ? esc(comboText(cmbDraft))
+    : '<em>Tap strikes to build the combo</em>';
+}
+function paintCombo(){
+  const L = sides();
+  const groups = [['punch','Punches'],['kick','Kicks'],['knee','Knees'],['elbow','Elbows'],['defense','Defence']];
+  el('comboBody').innerHTML =
+    groups.map(([g,label])=>`
+      <h2 class="sec">${label}</h2>
+      <div class="pickGrid">${CAT.filter(t=>t.g === g).map(t=>
+        `<button data-add="${t.k}">${esc(t.label(L))}</button>`).join('')}</div>`).join('')
+    + `<div class="draftBar">
+         <p class="cur" id="cmbCur"></p>
+         <button class="primary" id="cmbSave">Save combo</button>
+         <button class="ghost" id="cmbBack">Remove last</button>
+         ${cmbIndex >= 0 ? '<button class="ghost danger" id="cmbDel">Delete combo</button>' : ''}
+       </div>`;
+  paintCurrent();
+  el('cmbBack').addEventListener('click', ()=>{ cmbDraft.pop(); paintCurrent(); });
+  el('cmbSave').addEventListener('click', ()=>{
+    if(!cmbDraft.length) return;
+    cmbBlock.combos = cmbBlock.combos || [];
+    if(cmbIndex >= 0) cmbBlock.combos[cmbIndex] = cmbDraft.slice();
+    else cmbBlock.combos.push(cmbDraft.slice());
+    saveEx();
+    openBlock(blkCfg, blkIndex);
+  });
+  const del = el('cmbDel');
+  if(del) del.addEventListener('click', ()=>
+    confirmTap(del, 'Tap again to delete', 'Delete combo', ()=>{
+      cmbBlock.combos.splice(cmbIndex, 1);
+      saveEx();
+      openBlock(blkCfg, blkIndex);
+    }));
+}
+
+/* ── running a circuit ──────────────────────────────────────── */
+let blockDoneResolve = null;
+/* Skipping has to interrupt whatever the block is waiting on, so every
+   wait loop watches this alongside the run token. */
+let jumpTo = null, curBlock = -1, curBlocks = [];
+const goOn = tok => alive(tok) && jumpTo === null;
+
+function requestJump(n){
+  jumpTo = Math.max(0, n);
+  if(blockDoneResolve){ const r = blockDoneResolve; blockDoneResolve = null; r(); }
+}
+
+async function holdFor(tok, ms, onTick){
+  const cd = countdown(ms);
+  while(goOn(tok) && !cd.done()){
+    await wait(120);
+    onTick(cd.left(), ms);
+  }
+}
+
+TYPES.muaythai.runCircuit = async function(tok){
+  const blocks = (S.blocks || []).filter(b=>b && b.kind);
+  if(!blocks.length){ el('statusL').textContent = 'This circuit has no blocks'; return stop(); }
+  curBlocks = blocks;
+  stopTicker('circuit');
+
+  let i = S.startAt || 0;
+  while(i < blocks.length && alive(tok)){
+    jumpTo = null;
+    curBlock = i;
+    const b = blocks[i];
+    /* Keyed by index, not appended: jumping back re-runs a block rather
+       than logging it twice. done stays false until it reaches its own
+       end, so a skipped block is recorded as skipped. */
+    live.blocks[i] = {kind:b.kind, label:b.label, done:false};
+    el('phase').textContent = `${i+1} of ${blocks.length} · ${b.label}`;
+    bell(1);
+    await say(b.label);
+    if(!alive(tok)) return;
+
+    if(jumpTo !== null){ i = jumpTo; continue; }
+    if(b.kind === 'counted'){
+      el('statusL').textContent = 'Tap done when finished';
+      stage().innerHTML =
+        `<div class="strike on"><span class="n"></span><span class="t">${esc(String(b.target))}</span></div>
+         <div class="strike on" style="opacity:.55"><span class="n"></span>
+           <span class="t" style="font-size:1.5rem">${esc(b.label)}</span></div>`;
+      el('blockDone').hidden = false;
+      await new Promise(res=>{ blockDoneResolve = res; });
+      blockDoneResolve = null;
+      el('blockDone').hidden = true;
+      stage().innerHTML = '';
+    } else if(b.kind === 'guided'){
+      el('statusL').textContent = 'Throw it';
+      /* The clock runs on its own ticker rather than being updated once
+         per combo — a combo takes several seconds, and the countdown was
+         visibly frozen for all of them. The ticker also reports zero
+         elapsed while paused, so the block freezes for free. */
+      const cd = countdown((b.secs || 180) * 1000);
+      let n = 0;
+      /* The clock is a pure read of the deadline; the combo loop below
+         never touches it and cannot slow it down or speed it up. */
+      ticker('circuit', ()=>{ el('clock').textContent = fmt(cd.secs()); }, 200, {whilePaused:true});
+      while(goOn(tok) && !cd.done()){
+        await gate();
+        if(!goOn(tok)) break;
+        await callBlockCombo(tok, b, n++);
+      }
+      stopTicker('circuit');
+      stage().innerHTML = '';
+    } else {
+      el('statusL').textContent = 'Go';
+      const total = (b.secs || 60) * 1000;
+      el('clock').textContent = fmt(Math.round(total/1000));
+      await holdFor(tok, total, (left, all)=>{
+        el('clock').textContent = fmt(Math.round(left/1000));
+        setRopeAt(left/all);
+      });
+      setRopeAt(0);
+    }
+    if(!alive(tok)) return;
+    if(jumpTo !== null){ i = jumpTo; continue; }
+    live.blocks[i].done = true;
+    i++;
+  }
+  if(!alive(tok)) return;
+  bell(2);
+  await say('Circuit complete. Good work.');
+  stop();
+};
+
+/* A scripted block calls what you wrote; a random one calls the engine. */
+async function callBlockCombo(tok, b, n){
+  let combo;
+  if(b.source === 'script' && (b.combos || []).length){
+    const list = b.combos;
+    const ids = (b.order === 'mix')
+      ? list[Math.floor(Math.random() * list.length)]
+      : list[n % list.length];
+    combo = comboFromIds(ids);
+  } else {
+    combo = buildCombo();
+  }
+  if(!combo.length) return wait(400);
+  render(combo);
+  live.combos++; live.strikes += combo.length;
+  const L = sides();
+  for(let i = 0; i < combo.length; i++){
+    await gate();
+    if(!goOn(tok)) return;
+    highlight(i);
+    await say(spoken(combo[i], L));
+    if(!goOn(tok)) return;
+    if(i < combo.length - 1 && S.gap > 0) await wait(S.gap * 1000);
+  }
+  highlight(-1);
+  el('statusL').textContent = 'Reset';
+  const rest = (S.rest || 4) * 1000;
+  const cd = countdown(rest);
+  while(goOn(tok) && !cd.done()){
+    await wait(80);
+    el('statusR').textContent = (cd.left()/1000).toFixed(1);
+    setRopeAt(cd.left()/rest);
+  }
+  el('statusR').textContent = '';
+  setRopeAt(0);
+  el('statusL').textContent = 'Throw it';
+}
+
+el('blockDone').addEventListener('click', ()=>{ if(blockDoneResolve) blockDoneResolve(); });
+
+/* Skip forward one block. */
+el('nextBlock').addEventListener('click', ()=>{
+  if(curBlock < 0) return;
+  requestJump(curBlock + 1);
+});
+
+/* Pausing a circuit turns the otherwise-empty stage into the running
+   order, so you can restart mid-session and pick up where you stopped. */
+window.onCircuitPause = function(isPaused){
+  if(S.shape !== 'circuit' || !running) return;
+  if(!isPaused){ stage().innerHTML = ''; return; }
+  stage().innerHTML = `<div class="jumpList">` + curBlocks.map((b,n)=>`
+    <button class="jumpRow ${n === curBlock ? 'now' : n < curBlock ? 'past' : ''}" data-jump="${n}">
+      <span class="n">${n+1}</span>
+      <span class="l">${esc(b.label)}</span>
+      <span class="d">${b.kind === 'counted' ? '×'+b.target : fmt(b.secs)}</span>
+    </button>`).join('') + `</div>`;
+  el('statusL').textContent = 'Tap a block to jump there';
+};
+
+stage().addEventListener('click', e=>{
+  const r = e.target.closest('[data-jump]');
+  if(!r || !running) return;
+  requestJump(+r.dataset.jump);
+  stage().innerHTML = '';
+  setPaused(false);
+  el('pauseBtn').textContent = 'Pause';
+});
+window.releaseBlockWait = ()=>{
+  stopTicker('circuit');
+  el('blockDone').hidden = true;
+  if(blockDoneResolve){ const r = blockDoneResolve; blockDoneResolve = null; r(); }
+};
+})();
+/* ╔══════════════════════════════════════════════════════════════╗
+   ║  CIRCUIT MODULE — END                                        ║
    ╚══════════════════════════════════════════════════════════════╝ */
 
 resetAccent();
