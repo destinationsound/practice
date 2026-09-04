@@ -591,7 +591,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '8.1';
+const APP_VERSION = '8.3';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -1097,8 +1097,11 @@ function uncheckOn(ex, date){
 }
 const uncheckToday = ex => uncheckOn(ex, new Date());
 TYPES.task.open = ()=>{
-  doneToday(cur) ? uncheckToday(cur) : checkOff(cur);
-  backToExercise();
+  const d = detailDay || new Date();
+  doneOn(cur, d) ? uncheckOn(cur, d) : checkOff(cur, d);
+  /* stay put, so the button flips under your finger and the screen
+     never changes shape */
+  openExercise(cur.id, detailDay);
 };
 
 /* ══ backup ════════════════════════════════════════════════════
@@ -1309,18 +1312,17 @@ el('homeBody').addEventListener('click', e=>{
   pushOrigin();
   if(b.classList.contains('today')){
     const d = viewDay(), z = addDays(d, 1);
-    /* Already recorded: open it so you can correct it rather than log it twice. */
+    const ex = exercises.find(x=>x.id === b.dataset.e);
+    /* A task always opens its own screen, ticked or not. The toggle there
+       is the only way to do it, so the interface never changes shape. */
+    if(ex && typeOf(ex.type).kind === 'checkoff' && !(ex.cfg && ex.cfg.timed))
+      return openExercise(ex.id, dayOffset ? d : null);
+    /* Anything already recorded opens for correction rather than logging twice. */
     const rec = sessions.filter(x=>x.exerciseId === b.dataset.e && inRange(x, d, z))
                         .sort((x,y)=>y.start - x.start)[0];
     if(rec) return editSession(rec);
-    /* A past day cannot be started, only filled in. Tomorrow is a plan,
-       so it opens the exercise like any other row. */
-    if(dayOffset < 0){
-      const ex = exercises.find(x=>x.id === b.dataset.e);
-      if(ex && typeOf(ex.type).kind === 'checkoff'){ originStack.pop(); checkOff(ex, d); return renderHome(); }
-      cur = ex || cur;
-      return openLog(b.dataset.e, null, d);
-    }
+    /* A past day cannot be started, only filled in. */
+    if(dayOffset < 0){ cur = ex || cur; return openLog(b.dataset.e, null, d); }
   }
   openExercise(b.dataset.e);
 });
@@ -1394,7 +1396,12 @@ function logOnlyFacts(mine){
     [last ? dDay(last.start) : '—', 'Last time'],
   ];
 }
-function openExercise(id){
+/* The day this screen is acting on. Null means today. Set only when
+   the home list was paged back, so the one toggle on this screen always
+   means the day you were looking at. */
+let detailDay = null;
+function openExercise(id, day){
+  detailDay = day || null;
   cur = exercises.find(e=>e.id === id);
   if(!cur){ renderHome(); return show('home'); }
   const t = typeOf(cur.type);
@@ -1412,7 +1419,9 @@ function openExercise(id){
       ? `<button class="primary" id="logForEx">Log a session</button>`
       : `<button class="primary" id="startEx" ${t.ready?'':'disabled'}>${
           !t.ready ? 'Coming soon'
-          : t.kind === 'checkoff' ? (doneToday(cur) ? 'Done today — tap to undo' : 'Check off')
+          : t.kind === 'checkoff' ? (doneOn(cur, detailDay || new Date())
+              ? `Done${detailDay ? ' ' + esc(dWeek(detailDay)) : ' today'} — tap to undo`
+              : `Check off${detailDay ? ' for ' + esc(dWeek(detailDay)) : ''}`)
           : 'Start'}</button>`}
     ${t.ready ? '<button class="ghost" id="editEx">Edit exercise</button>' : ''}
     <button class="ghost" id="dupEx">Duplicate</button>
@@ -2581,6 +2590,8 @@ function openLog(exId, existing, day){
   /* A check-off only asks how long if it was set up to record time.
      Otherwise there is nothing to say beyond the date. */
   const wantsTime = !(kindOf === 'checkoff' && !(subject && subject.cfg && subject.cfg.timed));
+  /* A task is ticked, not logged — "delete" is the wrong word for undoing it. */
+  const isCheck = kindOf === 'checkoff';
 
   el('logBody').innerHTML = `
     <h2 class="sec">Exercise</h2>
@@ -2604,12 +2615,6 @@ function openLog(exId, existing, day){
     <div class="field" style="margin-top:12px"><label>Duration</label><span class="val" id="logDurv"></span></div>
     <input type="range" id="logDur" min="${written ? 1 : 5}" max="${written ? 120 : 240}" step="5" value="${Math.min(240, Math.max(5, Math.round(mins/5)*5))}">`}
     ${written ? '' : `
-    <div class="chips" id="logQuick">
-      ${[15,30,45,60,90].map(v=>`<button class="chip" data-q="${v}">${v} min</button>`).join('')}
-    </div>
-    <div class="field" style="margin-top:12px"><label>Duration</label><span class="val" id="logDurv"></span></div>
-    <input type="range" id="logDur" min="5" max="240" step="5" value="${Math.min(240, Math.max(5, Math.round(mins/5)*5))}">
-
     <h2 class="sec">Effort</h2>
     <div class="chips" id="logEffort">
       ${Object.keys(EFFORTS).map(k=>`<button class="chip" data-e="${k}">${EFFORTS[k]}</button>`).join('')}
@@ -2619,7 +2624,8 @@ function openLog(exId, existing, day){
     <textarea id="logNote" placeholder="Partner drills, six minutes of rope, push-ups at the end" maxlength="240">${esc(existing && existing.note || '')}</textarea>
 
     <button class="primary" id="logSave" style="margin-top:28px">${existing ? 'Save changes' : 'Log session'}</button>
-    ${existing ? '<button class="ghost danger" id="logDel">Delete session</button>' : ''}`;
+    ${!existing ? '' : `<button class="ghost danger" id="logDel">${
+      isCheck ? 'Uncheck this day' : 'Delete session'}</button>`}`;
 
   let effort = existing && existing.effort || (written ? '' : 'moderate');
   if(!written){
@@ -2672,7 +2678,9 @@ function openLog(exId, existing, day){
 
   const del = el('logDel');
   if(del) del.addEventListener('click', ()=>
-    confirmTap(del, 'Tap again to delete', 'Delete session', ()=>{
+    confirmTap(del,
+      isCheck ? 'Tap again to uncheck' : 'Tap again to delete',
+      isCheck ? 'Uncheck this day' : 'Delete session', ()=>{
       removeSession(existing);
       popOrigin();
     }));
