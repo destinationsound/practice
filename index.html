@@ -591,7 +591,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '8.3';
+const APP_VERSION = '8.6';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -725,15 +725,32 @@ const TYPES = {
       if(c.shape !== 'circuit') return;
       c.blocks = c.blocks || [];
       const paint = ()=>{
-        el('blockList').innerHTML = c.blocks.length ? c.blocks.map((b,i)=>
-          rowHTML({attr:`data-blk="${i}"`, accent:blockAccent(b),
-            name:b.label, nameStyle:'font-size:17px',
-            sub:blockSummary(b), go:'›'})).join('')
+        el('blockList').innerHTML = c.blocks.length ? c.blocks.map((b,i)=>`
+          <div class="blkRow">
+            <button class="open" data-blk="${i}">
+              <span class="tick" style="background:${blockAccent(b)}"></span>
+              <span class="txt">
+                <span class="nm">${esc(b.label)}</span>
+                <span class="sb">${esc(blockSummary(b))}</span>
+              </span>
+            </button>
+            <button class="mv" data-mv="up:${i}" ${i === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
+            <button class="mv" data-mv="down:${i}" ${i === c.blocks.length-1 ? 'disabled' : ''} aria-label="Move down">↓</button>
+          </div>`).join('')
           : `<p class="note" style="margin:0">No blocks yet.</p>`;
       };
       paint();
       blockRepaint = paint;
       el('blockList').addEventListener('click', e=>{
+        const mv = e.target.closest('[data-mv]');
+        if(mv){
+          const [dir, at] = mv.dataset.mv.split(':');
+          const i = +at, j = dir === 'up' ? i-1 : i+1;
+          if(j < 0 || j >= c.blocks.length) return;
+          [c.blocks[i], c.blocks[j]] = [c.blocks[j], c.blocks[i]];
+          saveEx(); paint();
+          return;
+        }
         const r = e.target.closest('[data-blk]'); if(!r) return;
         openBlock(c, +r.dataset.blk);
       });
@@ -2273,16 +2290,28 @@ let statView = 'days', statOffset = 0, statType = 'all', statTask = 'all';
    happening. Time is texture, so it moves to a secondary line — it
    means very different things across types and nothing at all for
    the written ones. The streak is global, not range-scoped. */
+/* Every streak counts consecutive DAYS, so they all mean the same
+   thing and can be read against each other. Counting scheduled days
+   instead would make a Sunday-only class read 20 for twenty weeks —
+   the same number as twenty days of daily work, in a different unit.
+
+   A specific class will therefore have a short streak, which is honest:
+   the question worth asking is whether you trained, and that is what
+   the Body and Mind streaks answer. At-home training keeps the Body
+   streak exactly as a class does. */
 function currentStreak(sel){
   const pool = !sel || sel === 'all' ? sessions
     : sel === 'training' ? sessions.filter(s=>!isUpkeep(s))
     : sel === 'upkeep' ? sessions.filter(isUpkeep)
+    : sel === 'cat:physical' ? sessions.filter(s=>s.category === 'physical')
+    : sel === 'cat:mental' ? sessions.filter(s=>s.category === 'mental')
     : String(sel).startsWith('ex:') ? sessions.filter(s=>s.exerciseId === String(sel).slice(3))
     : sessions.filter(s=>s.type === sel);
   if(!pool.length) return 0;
+
   const days = new Set(pool.map(x=>dayStart(x.start).getTime()));
   let d = dayStart(new Date());
-  if(!days.has(d.getTime())) d = addDays(d, -1);   // today still has time to happen
+  if(!days.has(d.getTime())) d = addDays(d, -1);   // today is still open
   let n = 0;
   while(days.has(d.getTime())){ n++; d = addDays(d, -1); }
   return n;
@@ -2426,7 +2455,9 @@ const isUpkeep = s => typeOf(s.type).category === 'upkeep';
    every task shares one type and each is its own habit. */
 const ofType = list => statType === 'all'
   ? list.filter(s=>!isUpkeep(s))
-  : list.filter(s=>!isUpkeep(s) && s.type === statType);
+  : statType.startsWith('cat:')
+    ? list.filter(s=>!isUpkeep(s) && s.category === statType.slice(4))
+    : list.filter(s=>!isUpkeep(s) && s.type === statType);
 const ofTask = list => statTask === 'all'
   ? list.filter(isUpkeep)
   : list.filter(s=>s.exerciseId === statTask);
@@ -2468,7 +2499,11 @@ function sectionRow(title, id, opts, current){
 function exerciseSection(w){
   const list = ofType(sessionsIn(w.from, w.to));
   const kinds = [...new Set(sessions.filter(s=>!isUpkeep(s)).map(s=>s.type))].sort();
-  const opts = [['all','All activities']].concat(kinds.map(k=>[k, typeOf(k).name]));
+  /* three levels: everything, a whole side of the app, or one activity */
+  const cats = BALANCE_CATS
+    .filter(c=>sessions.some(s=>!isUpkeep(s) && s.category === c.id))
+    .map(c=>['cat:'+c.id, c.name]);
+  const opts = [['all','All activities']].concat(cats).concat(kinds.map(k=>[k, typeOf(k).name]));
   if(!opts.some(o=>o[0] === statType)) statType = 'all';
   const order = t => (typeOf(t).category === 'mental' ? 0 : 1);
   const shown = [...new Set(list.map(s=>s.type))].sort((x,y)=>order(x)-order(y) || x.localeCompare(y));
@@ -2476,7 +2511,7 @@ function exerciseSection(w){
 
   return sectionRow('Exercises', 'statType', opts, statType)
     + totalsBlock(list, statType === 'all' ? 'training' : statType)
-    + (statType === 'all' ? typeBreakdown(list) : '')
+    + (statType === 'all' || statType.startsWith('cat:') ? typeBreakdown(list) : '')
     + (ad && ad.plan ? `<p class="adh">Planned sessions — <b>${ad.hit} of ${ad.plan}</b></p>` : '')
     + chartHTML(w, ofType)
     + `<div class="key">${shown.map(t=>
@@ -4088,6 +4123,21 @@ document.addEventListener('click', e=>{
 
 const css = document.createElement('style');
 css.textContent = `
+  /* Its own row rather than rowHTML: a button cannot be nested inside a
+     button, and the move controls have to be real buttons. */
+  .blkRow{display:flex;align-items:center;border-bottom:1px solid var(--line);}
+  .blkRow .open{
+    flex:1;min-width:0;display:flex;align-items:center;gap:12px;
+    text-align:left;padding:14px 0;
+  }
+  .blkRow .tick{width:3px;height:30px;border-radius:2px;flex:none;}
+  .blkRow .txt{flex:1;min-width:0;}
+  .blkRow .nm{display:block;font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .blkRow .sb{display:block;font-size:13px;color:var(--text-dim);margin-top:3px;}
+  .blkRow .mv{
+    flex:none;width:38px;height:44px;font-size:17px;color:var(--text-dim);
+  }
+  .blkRow .mv[disabled]{opacity:.2;}
   .blkKind{display:flex;flex-direction:column;gap:10px;margin-top:4px;}
   .blkKind button{
     text-align:left;border:1px solid var(--line);border-radius:2px;padding:15px 16px;
