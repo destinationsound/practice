@@ -14,7 +14,11 @@
      Every colour in the app resolves through these tokens — no
      component sets a colour of its own. Light is the default; the
      dark set below is complete and unused, so switching back later
-     is a class on <body> and nothing else.
+     is a class on <body>
+<!-- Web Audio obeys the ringer switch on iOS. Routing the same output
+     through a media element instead sends it down the media channel,
+     which does not. Started from a gesture in unlockAudio(). -->
+<audio id="sink" playsinline></audio> and nothing else.
      ══════════════════════════════════════════════════════════ */
   :root{
     --bg:#FFFFFF;          /* page */
@@ -591,7 +595,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '8.6';
+const APP_VERSION = '8.8';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -1450,6 +1454,7 @@ function openExercise(id, day){
 el('exerciseDetail').addEventListener('click', e=>{
   if(!cur) return;
   if(e.target.closest('#startEx') && typeOf(cur.type).ready){
+    unlockAudio();                 // this tap is the gesture iOS needs
     pushOrigin();
     loadCfg(cur);
     (typeOf(cur.type).open || openSession)();
@@ -1673,7 +1678,7 @@ function bell(hits=1){
         g.gain.setValueAtTime(0.0001,t0);
         g.gain.exponentialRampToValueAtTime(i?0.12:0.3, t0+0.008);
         g.gain.exponentialRampToValueAtTime(0.0001, t0+1.5);
-        o.connect(g).connect(actx.destination);
+        o.connect(g).connect(audioOut());
         o.start(t0); o.stop(t0+1.6);
       });
     }
@@ -1699,6 +1704,69 @@ function applyAudioSession(){
 }
 const audioSessionSupported = ()=> typeof navigator !== 'undefined' && !!navigator.audioSession;
 
+/* iOS will not start an AudioContext outside a user gesture, and
+   resume() from a timer callback does not count. Only meditation ever
+   opened it on a tap, so every other chime was silent until a sit had
+   happened in that same app session. */
+let audioUnlocked = false, masterGain = null, streamOut = null, viaMedia = false;
+
+/* Everything plays into this, so there is one place to re-route. */
+function audioOut(){
+  if(!actx) return null;
+  if(!masterGain){
+    masterGain = actx.createGain();
+    masterGain.gain.value = 1;
+    masterGain.connect(actx.destination);
+  }
+  return masterGain;
+}
+
+/* Send the master through a media element as well, then drop the direct
+   speaker connection so nothing plays twice. If the element refuses to
+   play, the direct connection stays and sound still works — just
+   subject to the ringer switch, as before. */
+function routeThroughMedia(){
+  if(viaMedia || !actx || !actx.createMediaStreamDestination) return;
+  const sink = el('sink');
+  if(!sink) return;
+  try{
+    streamOut = actx.createMediaStreamDestination();
+    audioOut().connect(streamOut);
+    sink.srcObject = streamOut.stream;
+    sink.playsInline = true;
+    const p = sink.play();
+    if(p && p.then) p.then(()=>{
+      viaMedia = true;
+      try{ masterGain.disconnect(actx.destination); }catch(e){}
+    }).catch(()=>{
+      try{ audioOut().disconnect(streamOut); }catch(e){}
+      streamOut = null;
+    });
+  }catch(e){ streamOut = null; }
+}
+
+function unlockAudio(){
+  if(!audioUnlocked){
+    audioUnlocked = true;
+    ensureAudio();
+    routeThroughMedia();
+    try{                                  // some builds only start on first output
+      const g = actx.createGain();
+      g.gain.value = 0.0001;
+      g.connect(audioOut());
+      const o = actx.createOscillator();
+      o.connect(g); o.start(); o.stop(actx.currentTime + 0.01);
+    }catch(e){}
+    return;
+  }
+  try{ if(actx && actx.state === 'suspended') actx.resume(); }catch(e){}
+  try{ const sk = el('sink'); if(sk && sk.paused && streamOut) sk.play().catch(()=>{}); }catch(e){}
+}
+/* every tap, not just the first — iOS suspends an idle context and only
+   a gesture can wake it */
+['pointerdown','touchstart','click'].forEach(ev=>
+  document.addEventListener(ev, unlockAudio, {capture:true, passive:true}));
+
 function ensureAudio(){
   applyAudioSession();
   try{
@@ -1708,9 +1776,11 @@ function ensureAudio(){
   return actx;
 }
 function bowl(t0, vol, dest){
-  if(!actx) return;
-  const out = dest || actx.destination;
+  if(!actx) return null;
+  const voices = [];
+  const out = dest || audioOut();
   const strike = actx.createOscillator(), sg = actx.createGain();
+  voices.push(strike);
   strike.type = 'triangle'; strike.frequency.value = 2400;
   sg.gain.setValueAtTime(0.0001, t0);
   sg.gain.exponentialRampToValueAtTime(vol*0.05, t0+0.004);
@@ -1728,8 +1798,15 @@ function bowl(t0, vol, dest){
       g.gain.exponentialRampToValueAtTime(0.0001, t0 + decay);
       o.connect(g).connect(out);
       o.start(t0); o.stop(t0 + decay + 0.1);
+      voices.push(o);
     });
   });
+  return voices;
+}
+/* A strike scheduled ahead can be called off if the wait is cut short. */
+function cancelBowl(voices){
+  if(!voices) return;
+  voices.forEach(o=>{ try{ o.stop(); }catch(e){} });
 }
 /* Loudness is perceived logarithmically, so stepping the gain evenly
    sounds uneven — flat at first, then a sudden drop. Stepping evenly
@@ -1809,7 +1886,7 @@ function scheduleSit(remainingSec, withOpening){
   if(medGain){ try{ medGain.disconnect(); }catch(e){} }
   medGain = actx.createGain();
   medGain.gain.value = 1;
-  medGain.connect(actx.destination);
+  medGain.connect(audioOut());
 
   const t0 = actx.currentTime + 0.2;
   let sitStart = t0;
@@ -3617,14 +3694,15 @@ function editSet(t){
   const key = d.rp || d.ld || d.lv; if(!key) return;
   const [ii, si] = key.split('.').map(Number);
   const st = draft.items[ii].sets[si];
-  if(d.rp) st.reps = t.value;
-  if(d.ld) st.load = t.value;
+  if(d.rp){ st.reps = t.value; st.autoR = false; }   // you typed it, it is yours
+  if(d.ld){ st.load = t.value; st.autoL = false; }
   if(d.lv){
     /* Moving onto or off the weighted rung changes which fields the row
        has, so the row has to be drawn again — otherwise the weight box
        only appears after leaving and coming back. */
     const was = isWeighted(st.level);
     st.level = t.value;
+    st.autoV = false;
     if(!isWeighted(st.level)) st.load = '';
     saveDraft();
     if(was !== isWeighted(st.level)) return renderLift();
@@ -3667,7 +3745,7 @@ el('liftBody').addEventListener('click', e=>{
   }
   if(e.target.closest('#autofill')){
     draft.autofill = !draft.autofill;
-    if(draft.autofill) applyAutofill();
+    draft.autofill ? applyAutofill() : clearAutofill();
     saveDraft(); renderLift();
     return;
   }
@@ -3693,6 +3771,9 @@ el('liftBody').addEventListener('click', e=>{
   }
 });
 
+/* Each filled field is marked as the app's rather than yours, so turning
+   autofill off clears exactly what it put there and leaves anything you
+   typed — or already ticked — alone. */
 function applyAutofill(){
   draft.items.forEach(it=>{
     const m = moveOf(it.movementId);
@@ -3701,9 +3782,23 @@ function applyAutofill(){
     it.sets.forEach((st,i)=>{
       const p = prior.sets[i] || prior.sets[prior.sets.length-1];
       if(!p || st.done) return;
-      if(st.reps === '') st.reps = p.reps || '';
-      if(m.measure !== 'level' && st.load === '') st.load = fromLb(p.load) || '';
-      if(m.measure === 'level' && p.level) st.level = p.level;
+      if(st.reps === ''){ st.reps = p.reps || ''; st.autoR = true; }
+      if(m.measure !== 'level' && st.load === ''){ st.load = fromLb(p.load) || ''; st.autoL = true; }
+      if(m.measure === 'level' && p.level && st.level !== p.level){
+        st.wasLevel = st.level;
+        st.level = p.level;
+        st.autoV = true;
+      }
+    });
+  });
+}
+function clearAutofill(){
+  draft.items.forEach(it=>{
+    it.sets.forEach(st=>{
+      if(st.done) return;              // a ticked set is yours now
+      if(st.autoR){ st.reps = ''; st.autoR = false; }
+      if(st.autoL){ st.load = ''; st.autoL = false; }
+      if(st.autoV){ st.level = st.wasLevel || st.level; st.wasLevel = null; st.autoV = false; }
     });
   });
 }
@@ -3712,19 +3807,29 @@ function applyAutofill(){
 /* Holds the time remaining rather than an end timestamp. The ticker
    reports zero elapsed while paused, so the countdown freezes with no
    special case — the old version had to inch restEnd forward by hand. */
-let restCd = null;
+let restCd = null, restChime = null;
 function paintRest(){
   el('restT').textContent = fmt(restCd ? restCd.secs() : 0);
 }
+/* Scheduled on the audio clock the moment the rest starts, which is
+   inside the tap that ticked the set. Firing it from the timer meant
+   asking a suspended context to wake ninety seconds later with no
+   gesture in sight — the reason meditation, which schedules all its
+   bowls up front, was the only thing that ever sounded. */
 function startRest(item){
   restCd = countdown(item.rest * 1000);
   el('restN').textContent = 'Rest · ' + item.name;
   bar.classList.add('on');
+  cancelBowl(restChime); restChime = null;
+  try{
+    unlockAudio();
+    restChime = bowl(actx.currentTime + item.rest, 0.7, null);
+  }catch(e){}
   ticker('rest', ()=>{
     paintRest();
     if(restCd.done()){
       stopTicker('rest');
-      try{ ensureAudio(); bowl(actx.currentTime + 0.05, 0.7, null); }catch(e){}
+      restChime = null;
       el('restN').textContent = 'Go';
       setTimeout(()=>{ if(!tickers.has('rest')) bar.classList.remove('on'); }, 2500);
     }
@@ -3732,10 +3837,17 @@ function startRest(item){
 }
 function stopRest(){
   stopTicker('rest');
+  cancelBowl(restChime); restChime = null;
   bar.classList.remove('on');
 }
 el('restSkip').addEventListener('click', stopRest);
-el('restAdd').addEventListener('click', ()=>{ if(restCd) restCd.add(30000); paintRest(); });
+el('restAdd').addEventListener('click', ()=>{
+  if(!restCd) return;
+  restCd.add(30000);
+  paintRest();
+  cancelBowl(restChime);
+  try{ restChime = bowl(actx.currentTime + restCd.left()/1000, 0.7, null); }catch(e){}
+});
 
 function startElapsed(){
   /* runs while paused so it can say so */
@@ -4009,8 +4121,10 @@ function paintMins(){
   el('writeTimerGo').textContent = 'Start';
   el('writeTimerGo').classList.remove('on');
 }
+let writeChime = null;
 function stopWriteTimer(){
   stopTicker('writeLimit');
+  cancelBowl(writeChime); writeChime = null;
   const b = el('writeTimerGo');
   if(b){ b.classList.remove('on'); b.textContent = 'Start'; }
 }
@@ -4020,12 +4134,13 @@ function startWriteTimer(){
   const cd = countdown(v * 60000);
   const b = el('writeTimerGo');
   b.hidden = false; b.classList.add('on');
+  cancelBowl(writeChime); writeChime = null;
+  try{ unlockAudio(); writeChime = bowl(actx.currentTime + v*60, 0.6, null); }catch(e){}
   ticker('writeLimit', ()=>{
     b.textContent = fmt(cd.secs());
     if(cd.done()){
       stopWriteTimer();
       b.textContent = 'Time';
-      try{ ensureAudio(); bowl(actx.currentTime + 0.05, 0.6, null); }catch(e){}
     }
   }, 250, {whilePaused:true});
 }
