@@ -126,6 +126,14 @@
   .dayNav{display:flex;align-items:center;gap:10px;margin:0 0 12px;}
   .dayNav .grp{flex:1;text-align:center;margin:0;}
   .dayNav button[disabled]{opacity:.25;}
+  .nagRow{
+    width:100%;display:flex;align-items:center;gap:12px;text-align:left;
+    padding:13px 14px;margin:0 0 18px;border:1px solid var(--brand);border-radius:2px;
+  }
+  .nagRow .grow{flex:1;min-width:0;}
+  .nagRow .name{display:block;font-size:16px;}
+  .nagRow .sub{display:block;font-size:13px;color:var(--text-dim);margin-top:3px;}
+  .nagRow .go{color:var(--text-dim);flex:none;}
   .nothing{color:var(--text-dim);font-size:13px;padding:16px 0;border-bottom:1px solid var(--line);}
 
   .addbtn{width:100%;margin-top:24px;padding:16px;border:1px dashed var(--line);border-radius:2px;text-align:center;color:var(--text-dim);font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;font-size:13px;font-weight:600;}
@@ -319,6 +327,7 @@
     <button class="ghost" id="test">Test voice</button>
     <p class="note" id="testnote">Tap to hear a sample. If you hear nothing, check the silent switch and media volume.</p>
     <h2 class="sec">Your data</h2>
+    <p class="note" id="storageNote"></p>
     <button class="ghost" id="doExport">Export a backup</button>
     <button class="ghost" id="doImport">Import a backup</button>
     <input type="file" id="importFile" accept="application/json,.json" hidden>
@@ -595,7 +604,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '8.8';
+const APP_VERSION = '8.9';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -834,13 +843,27 @@ const summaryOf = ex => ex.logOnly ? 'Logged by hand'
 
 /* ══ storage ═══════════════════════════════════════════════════ */
 const K_GLOBAL='practice.global.v1', K_EX='practice.exercises.v1', K_SESSIONS='practice.sessions.v1';
-let G = {rate:.95, pitch:1, callouts:'words', voiceURI:null, units:'lb', audioMode:'playback'};
+let G = {rate:.95, pitch:1, callouts:'words', voiceURI:null, units:'lb', audioMode:'playback', lastExport:null};
 let exercises = [], sessions = [];
 
 const read = (k,f)=>{ try{ const v=JSON.parse(localStorage.getItem(k)||'null'); return v==null?f:v; }catch(e){ return f; } };
 /* Storage can hold valid JSON of the wrong shape — a half-finished
    write, a future version, a hand-edited value. Booting straight into
    it used to throw before any UI existed, leaving no way to recover. */
+/* iOS does not guarantee that local storage survives. Home-screen apps
+   are exempt from the seven-day inactivity wipe, but data can still be
+   dropped when the device runs short of space. Asking for persistence
+   is undocumented by Apple and has to be re-requested on every launch,
+   but it is reported to protect data, and it costs one call. */
+let storagePersisted = null;
+async function askPersistentStorage(){
+  try{
+    if(!navigator.storage || !navigator.storage.persist) return;
+    storagePersisted = await navigator.storage.persisted();
+    if(!storagePersisted) storagePersisted = await navigator.storage.persist();
+  }catch(e){ storagePersisted = null; }
+}
+
 const readList = (k,f)=>{ const v = read(k,null); return Array.isArray(v) ? v.filter(x=>x && typeof x === 'object') : f; };
 let storageBroken = false;
 const write = (k,v)=>{
@@ -1280,6 +1303,26 @@ const dayTitle = ()=>
   : dayOffset === 1 ? 'Tomorrow'
   : dWeek(viewDay());
 
+/* A backup is the only copy that outlives the browser, so the app keeps
+   track of when you last took one rather than leaving you to remember.
+   It waits until there is history worth losing before saying anything. */
+const BACKUP_AFTER = 14 * 86400000;
+function backupNag(){
+  if(sessions.length < 10) return '';
+  const since = G.lastExport ? Date.now() - G.lastExport : null;
+  if(since !== null && since < BACKUP_AFTER) return '';
+  const days = since === null ? null : Math.floor(since / 86400000);
+  return `<button class="nagRow" id="nagBackup">
+      <span class="grow">
+        <span class="name">Back up your history</span>
+        <span class="sub">${since === null
+          ? `${sessions.length} sessions recorded and never exported`
+          : `Last backed up ${days} days ago`}</span>
+      </span>
+      <span class="go">›</span>
+    </button>`;
+}
+
 function todayBlock(){
   if(!exercises.length) return '';
   const d = viewDay();
@@ -1322,12 +1365,13 @@ function renderHome(){
         }).join('')
       : `<div class="nothing">Nothing here yet.</div>`);
   }).join('');
-  el('homeBody').innerHTML = todayBlock() + balanceBlock() + sections
+  el('homeBody').innerHTML = backupNag() + todayBlock() + balanceBlock() + sections
     + `<button class="addbtn" id="newEx">+ Add new</button>`;
 }
 el('homeBody').addEventListener('click', e=>{
   if(e.target.closest('#dayBack')){ if(dayOffset > DAY_BACK){ dayOffset--; renderHome(); } return; }
   if(e.target.closest('#dayFwd')){ if(dayOffset < 1){ dayOffset++; renderHome(); } return; }
+  if(e.target.closest('#nagBackup')){ show('settings'); return; }
   if(e.target.closest('#newEx')){ renderTypes(); return show('newtype'); }
   const b = e.target.closest('[data-e]'); if(!b) return;
   pushOrigin();
@@ -2832,6 +2876,20 @@ function paintAudioNote(){
     : 'Plays alongside your music, but goes quiet when the ringer switch is on silent.';
 }
 paintAudioNote();
+function paintStorageNote(){
+  const n = el('storageNote'); if(!n) return;
+  const last = G.lastExport
+    ? `Last backup ${dDay(G.lastExport)}.`
+    : 'No backup taken yet.';
+  const kept = storagePersisted === true
+    ? 'This device has agreed to keep your data.'
+    : storagePersisted === false
+      ? 'This device has not guaranteed to keep your data, so a backup is the only safe copy.'
+      : '';
+  n.textContent = (last + ' ' + kept).trim();
+}
+paintStorageNote();
+askPersistentStorage().then(paintStorageNote);
 el('audioMode').addEventListener('click', e=>{
   const b = e.target.closest('.chip'); if(!b) return;
   setChips('audioMode', x=>x === b);
@@ -2839,6 +2897,7 @@ el('audioMode').addEventListener('click', e=>{
   applyAudioSession(); paintAudioNote();
 });
 el('doExport').addEventListener('click', ()=>{
+  G.lastExport = Date.now(); saveGlobal(); renderHome();
   const stamp = new Date().toISOString().slice(0,10);
   const blob = new Blob([JSON.stringify(buildBackup(), null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
