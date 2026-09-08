@@ -604,7 +604,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '8.9';
+const APP_VERSION = '9.0';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -1325,8 +1325,16 @@ function backupNag(){
 
 function todayBlock(){
   if(!exercises.length) return '';
-  const d = viewDay();
-  const planned = plannedFor(d);
+  const d = viewDay(), z = addDays(d, 1);
+  /* What was planned, plus whatever actually happened. Listing only the
+     schedule made a day of unplanned training look like a day of doing
+     nothing — the class you could not attend showed unticked and the
+     session you replaced it with was nowhere. */
+  const doneIds = [...new Set(sessionsIn(d, z).map(s=>s.exerciseId))];
+  const extra = doneIds
+    .map(id=>exercises.find(e=>e.id === id))
+    .filter(e=>e && !plannedFor(d).some(p=>p.id === e.id));
+  const planned = plannedFor(d).concat(extra);
   const left = planned.filter(e=>!didOn(e.id, d)).length;
   const head = `<div class="dayNav">
       <button class="iconbtn" id="dayBack" ${dayOffset <= DAY_BACK ? 'disabled' : ''} aria-label="Previous day">‹</button>
@@ -1342,10 +1350,11 @@ function todayBlock(){
   return head
     + planned.map(e=>{
         const t = typeOf(e.type), done = didOn(e.id, d);
+        const unplanned = !(e.sched && e.sched.days && e.sched.days.includes(d.getDay()));
         return rowHTML({
           cls: 'today' + (done?' isdone':''), attr: `data-e="${e.id}"`,
           accent: t.accent, name: e.name,
-          sub: esc(t.name),
+          sub: esc(t.name) + (unplanned && done ? ' · not scheduled' : ''),
           mark: done ? '✓' : ''
         });
       }).join('');
