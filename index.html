@@ -14,11 +14,7 @@
      Every colour in the app resolves through these tokens — no
      component sets a colour of its own. Light is the default; the
      dark set below is complete and unused, so switching back later
-     is a class on <body>
-<!-- Web Audio obeys the ringer switch on iOS. Routing the same output
-     through a media element instead sends it down the media channel,
-     which does not. Started from a gesture in unlockAudio(). -->
-<audio id="sink" playsinline></audio> and nothing else.
+     is a class on <body> and nothing else.
      ══════════════════════════════════════════════════════════ */
   :root{
     --bg:#FFFFFF;          /* page */
@@ -155,6 +151,15 @@
   h2.sec:first-child{margin-top:0;}
   .field{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:9px 0;}
   .field label{font-size:15px;}
+  .stepr{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:20px;overflow:hidden;}
+  .stepr button{width:38px;height:38px;color:var(--text-dim);font-size:17px;line-height:1;flex:none;}
+  .stepr button:active{background:var(--surface);}
+  .stepr input{
+    width:76px;height:38px;text-align:center;border:0;
+    border-left:1px solid var(--line);border-right:1px solid var(--line);border-radius:0;
+    background:var(--bg);font-family:var(--mono);font-size:16px;color:var(--text);padding:0;
+  }
+  .stepr input:focus{outline:none;background:var(--surface);}
   .field .val{font-family:var(--mono);font-size:14px;color:var(--text);font-variant-numeric:tabular-nums;}
   input[type=range]{-webkit-appearance:none;width:100%;height:26px;background:none;margin:0;}
   input[type=range]::-webkit-slider-runnable-track{height:2px;background:var(--line);}
@@ -308,10 +313,14 @@
     <h2 class="sec">Voice</h2>
     <select id="voicepick" aria-label="Voice"></select>
     <p class="note">For a clearer voice: Settings → Accessibility → Spoken Content → Voices → English, download <b>Ava</b> or <b>Samantha</b> (Enhanced or Premium), then reload and pick it here.</p>
-    <div class="field"><label for="rate">Speed</label><span class="val" id="ratev">0.95×</span></div>
-    <input type="range" id="rate" min="0.6" max="1.6" step="0.05" value="0.95">
-    <div class="field"><label for="pitch">Pitch</label><span class="val" id="pitchv">1.00</span></div>
-    <input type="range" id="pitch" min="0.6" max="1.4" step="0.05" value="1">
+    <div class="field"><label>Speed</label><span class="stepr">
+      <button type="button" data-st="rate" data-dir="-1" aria-label="Slower">−</button>
+      <input type="text" id="rate" inputmode="decimal" autocomplete="off" aria-label="Speed">
+      <button type="button" data-st="rate" data-dir="1" aria-label="Faster">+</button></span></div>
+    <div class="field"><label>Pitch</label><span class="stepr">
+      <button type="button" data-st="pitch" data-dir="-1" aria-label="Lower">−</button>
+      <input type="text" id="pitch" inputmode="decimal" autocomplete="off" aria-label="Pitch">
+      <button type="button" data-st="pitch" data-dir="1" aria-label="Higher">+</button></span></div>
     <h2 class="sec">Units</h2>
     <div class="chips" id="units">
       <button class="chip" data-u="lb" aria-pressed="true">Pounds</button>
@@ -327,6 +336,8 @@
     <button class="ghost" id="test">Test voice</button>
     <p class="note" id="testnote">Tap to hear a sample. If you hear nothing, check the silent switch and media volume.</p>
     <h2 class="sec">Your data</h2>
+    <button class="ghost" id="testSched">Test a bell 3 seconds from now</button>
+    <p class="note">The rest timer books its chime ahead like this. If the bowl in Sound plays but this one does not, scheduled audio is being dropped.</p>
     <p class="note" id="storageNote"></p>
     <button class="ghost" id="doExport">Export a backup</button>
     <button class="ghost" id="doImport">Import a backup</button>
@@ -604,7 +615,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '9.0';
+const APP_VERSION = '10.2';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -724,9 +735,9 @@ const TYPES = {
 
       {kind:'chips', key:'useRounds', label:'Rounds', type:'boolean', when:c=>c.shape!=='circuit',
        options:[[true,'Round timer'],[false,'Endless']]},
-      {kind:'slider', key:'roundLen', label:'Round length',        min:60, max:360, step:30, fmt:v=>fmt(v), when:c=>c.shape!=='circuit'},
-      {kind:'slider', key:'breakLen', label:'Rest between rounds', min:15, max:180, step:15, fmt:v=>fmt(v), when:c=>c.shape!=='circuit'},
-      {kind:'slider', key:'rounds',   label:'Rounds',              min:1,  max:12,  step:1, when:c=>c.shape!=='circuit'},
+      {kind:'slider', key:'roundLen', clock:true, label:'Round length',        min:10, max:900, step:1, fmt:v=>fmt(v), when:c=>c.shape!=='circuit'},
+      {kind:'slider', key:'breakLen', clock:true, label:'Rest between rounds', min:5,  max:600, step:1, fmt:v=>fmt(v), when:c=>c.shape!=='circuit'},
+      {kind:'slider', key:'rounds',   label:'Rounds',              min:1,  max:30,  step:1, when:c=>c.shape!=='circuit'},
     ],
     /* Modelled on the movement list, which nobody found confusing: the
        editor lists blocks, and each block is edited on its own screen. */
@@ -749,12 +760,27 @@ const TYPES = {
             </button>
             <button class="mv" data-mv="up:${i}" ${i === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
             <button class="mv" data-mv="down:${i}" ${i === c.blocks.length-1 ? 'disabled' : ''} aria-label="Move down">↓</button>
+            <button class="mv" data-bdup="${i}" aria-label="Duplicate">⧉</button>
+            <button class="mv" data-bdel="${i}" aria-label="Remove">×</button>
           </div>`).join('')
           : `<p class="note" style="margin:0">No blocks yet.</p>`;
       };
       paint();
       blockRepaint = paint;
       el('blockList').addEventListener('click', e=>{
+        const dup = e.target.closest('[data-bdup]');
+        if(dup){
+          const i = +dup.dataset.bdup;
+          c.blocks.splice(i+1, 0, JSON.parse(JSON.stringify(c.blocks[i])));
+          saveEx(); paint();
+          return;
+        }
+        const del = e.target.closest('[data-bdel]');
+        if(del){
+          c.blocks.splice(+del.dataset.bdel, 1);
+          saveEx(); paint();
+          return;
+        }
         const mv = e.target.closest('[data-mv]');
         if(mv){
           const [dir, at] = mv.dataset.mv.split(':');
@@ -791,7 +817,7 @@ const TYPES = {
     ],
     fields:[
       {kind:'section', label:'Sitting'},
-      {kind:'slider', key:'length', label:'Length', min:1, max:90, step:1, fmt:v=>v+' min'},
+      {kind:'slider', key:'length', label:'Length', min:1, max:180, step:1, fmt:v=>v+' min'},
       {kind:'note', text:'The timer starts after the opening bowl finishes, so you get the full sit.'},
 
       {kind:'chips', key:'interval', label:'Interval bell', type:'number',
@@ -799,7 +825,7 @@ const TYPES = {
       {kind:'note', text:'A single tap at that spacing, to re-anchor without ending the sit.'},
 
       {kind:'section', label:'Bowl'},
-      {kind:'slider', key:'taps',    label:'Taps at each end',       min:1, max:7, step:1},
+      {kind:'slider', key:'taps',    label:'Taps at each end',       min:1, max:12, step:1},
       {kind:'slider', key:'spacing', label:'Spacing between taps',   min:1, max:4, step:.1, fmt:v=>v.toFixed(1)+'s'},
       {kind:'slider', key:'volume',  label:'Volume', min:.1, max:1, step:.05, fmt:v=>Math.round(v*100)+'%'},
       {kind:'action', id:'mtest', label:'Hear the bowl',
@@ -1056,7 +1082,11 @@ function removeSession(s){
   sessionsChanged();
 }
 /* a finished session returns to whatever launched it */
-const backToExercise = ()=> popOrigin();
+/* Finishing a session goes Home rather than back to the exercise: the
+   detail screen is a dead end once you are done, and Today shows the
+   thing you just did now ticked. Editing still returns where it came
+   from, which is what popOrigin is for. */
+const backToExercise = ()=> { originStack = []; goRoot('home'); };
 
 function makeSession(ex, f){
   const type = ex ? ex.type : 'muaythai';
@@ -1079,6 +1109,15 @@ function makeSession(ex, f){
    It used to be 30s, which quietly swallowed any short session and
    made the app look broken. Anything that gets discarded now says so. */
 const MIN_SESSION = 5;
+/* Every completed session leaves through here, so a new type cannot
+   forget to. commitSession fires it once the record is safely stored;
+   editing an existing one is a different path and still returns to
+   whatever you were reading. */
+let onSessionDone = null;
+function finishToHome(){
+  originStack = [];
+  goRoot('home');
+}
 function commitSession(rec){
   if(!rec) return null;
   /* A written entry has no duration — its worth is that it exists.
@@ -1088,6 +1127,11 @@ function commitSession(rec){
   if(!(rec.dur >= floor)){ lastDiscard = rec.dur|0; return null; }
   sessions.push(rec);
   sessionsChanged();
+  /* deferred so the caller can finish its own cleanup first */
+  if(rec.source === 'app' || rec.source === 'manual') setTimeout(()=>{
+    if(onSessionDone){ const f = onSessionDone; onSessionDone = null; f(); }
+    else finishToHome();
+  }, 0);
   return rec;
 }
 let lastDiscard = 0;
@@ -1545,14 +1589,59 @@ el('exerciseDetail').addEventListener('click', e=>{
    ═══════════════════════════════════════════════════════════════ */
 const fieldId = f => 'f-' + f.key;
 
+/* Same control as the declared fields use, for the handful of places
+   that build their own. Type a value or tap a single step. */
+function steprHTML(id, val, opts){
+  const o = opts || {};
+  return `<span class="stepr">
+    <button type="button" data-st="${id}" data-dir="-1" aria-label="Less">−</button>
+    <input type="text" id="${id}" inputmode="${o.clock ? 'text' : 'decimal'}" autocomplete="off"
+           value="${esc(o.fmt ? o.fmt(val) : String(val))}" aria-label="${esc(o.label || id)}">
+    <button type="button" data-st="${id}" data-dir="1" aria-label="More">+</button>
+  </span>`;
+}
+function wireStepr(id, get, set, opts){
+  const o = opts || {}, input = el(id);
+  if(!input) return;
+  const paint = ()=>{ input.value = o.fmt ? o.fmt(get()) : String(get()); };
+  const apply = v=>{
+    if(isNaN(v)) return paint();
+    const step = o.step || 1;
+    let next = Math.round(v / step) * step;
+    next = Math.min(o.max, Math.max(o.min, parseFloat(next.toFixed(4))));
+    set(next); paint();
+    if(o.after) o.after(next);
+  };
+  const read = ()=>{
+    const t = String(input.value).trim();
+    if(o.parse) return o.parse(t);
+    if(t.includes(':')){ const [m,ss]=t.split(':'); return (parseFloat(m)||0)*60 + (parseFloat(ss)||0); }
+    return parseFloat(t.replace(/[^0-9.\-]/g, ''));
+  };
+  input.addEventListener('change', ()=>apply(read()));
+  input.addEventListener('blur', ()=>apply(read()));
+  [...document.querySelectorAll(`[data-st="${id}"]`)].forEach(b=>
+    b.addEventListener('click', ()=>apply(get() + (o.step || 1) * (+b.dataset.dir))));
+  paint();
+}
+
 function fieldsHTML(defs, cfg){
   return defs.map(f=>{
     if(f.kind === 'section') return `<h2 class="sec">${esc(f.label)}</h2>`;
     if(f.kind === 'note')    return `<p class="note">${f.html || esc(f.text || '')}</p>`;
     if(f.kind === 'action')  return `<button class="ghost" id="${esc(f.id)}">${esc(f.label)}</button>`;
+    /* A stepper rather than a slider. A slider spanning half an hour offers
+       five values per pixel; this gives every value exactly — tap for one
+       step, or type any of them. */
     if(f.kind === 'slider')  return `
-      <div class="field"><label>${esc(f.label)}</label><span class="val" id="${fieldId(f)}v"></span></div>
-      <input type="range" id="${fieldId(f)}" min="${f.min}" max="${f.max}" step="${f.step}" value="${cfg[f.key]}">`;
+      <div class="field"><label>${esc(f.label)}</label>
+        <span class="stepr">
+          <button type="button" data-nudge="${fieldId(f)}" data-dir="-1" aria-label="Less">−</button>
+          <input type="text" id="${fieldId(f)}" inputmode="${f.clock ? 'text' : 'decimal'}"
+                 autocomplete="off" aria-label="${esc(f.label)}">
+          <button type="button" data-nudge="${fieldId(f)}" data-dir="1" aria-label="More">+</button>
+        </span>
+      </div>`;
     if(f.kind === 'chips' || f.kind === 'multi') return `
       ${f.label ? `<h2 class="sec">${esc(f.label)}</h2>` : ''}
       <div class="chips" id="${fieldId(f)}">${f.options.map(o=>
@@ -1568,14 +1657,35 @@ function wireFields(defs, cfg, onChange){
 
   defs.forEach(f=>{
     if(f.kind === 'slider'){
-      const input = el(fieldId(f)), out = el(fieldId(f)+'v');
-      const paint = ()=>{ input.value = cfg[f.key]; out.textContent = f.fmt ? f.fmt(cfg[f.key]) : cfg[f.key]; };
+      const input = el(fieldId(f));
+      const paint = ()=>{ input.value = f.fmt ? f.fmt(cfg[f.key]) : String(cfg[f.key]); };
       painters.push(paint); paint();
-      input.addEventListener('input', ()=>{
-        cfg[f.key] = parseFloat(input.value);
+      const apply = v=>{
+        const stepped = Math.round(v / f.step) * f.step;
+        cfg[f.key] = parseFloat(Math.min(f.max, Math.max(f.min, stepped)).toFixed(4));
         if(f.after) f.after(cfg, cfg[f.key]);
         changed();
-      });
+      };
+      /* accepts 3:00 or 180 for a time, plain numbers otherwise */
+      const readTyped = txt=>{
+        const t = String(txt).trim();
+        if(f.parse) return f.parse(t);
+        if(t.includes(':')){
+          const [mm, ss] = t.split(':');
+          return (parseFloat(mm)||0) * 60 + (parseFloat(ss)||0);
+        }
+        return parseFloat(t.replace(/[^0-9.\-]/g, ''));
+      };
+      const commit = ()=>{
+        const v = readTyped(input.value);
+        isNaN(v) ? paint() : apply(v);
+      };
+      input.addEventListener('change', commit);
+      input.addEventListener('blur', commit);
+      /* a slider spanning half an hour cannot be dragged to the second,
+         so the value carries its own single-step controls */
+      [...document.querySelectorAll(`[data-nudge="${fieldId(f)}"]`)].forEach(b=>
+        b.addEventListener('click', ()=>apply(cfg[f.key] + f.step * (+b.dataset.dir))));
     }
     if(f.kind === 'chips'){
       const box = el(fieldId(f));
@@ -1761,7 +1871,7 @@ const audioSessionSupported = ()=> typeof navigator !== 'undefined' && !!navigat
    resume() from a timer callback does not count. Only meditation ever
    opened it on a tap, so every other chime was silent until a sit had
    happened in that same app session. */
-let audioUnlocked = false, masterGain = null, streamOut = null, viaMedia = false;
+let audioUnlocked = false, masterGain = null;
 
 /* Everything plays into this, so there is one place to re-route. */
 function audioOut(){
@@ -1774,35 +1884,14 @@ function audioOut(){
   return masterGain;
 }
 
-/* Send the master through a media element as well, then drop the direct
-   speaker connection so nothing plays twice. If the element refuses to
-   play, the direct connection stays and sound still works — just
-   subject to the ringer switch, as before. */
-function routeThroughMedia(){
-  if(viaMedia || !actx || !actx.createMediaStreamDestination) return;
-  const sink = el('sink');
-  if(!sink) return;
-  try{
-    streamOut = actx.createMediaStreamDestination();
-    audioOut().connect(streamOut);
-    sink.srcObject = streamOut.stream;
-    sink.playsInline = true;
-    const p = sink.play();
-    if(p && p.then) p.then(()=>{
-      viaMedia = true;
-      try{ masterGain.disconnect(actx.destination); }catch(e){}
-    }).catch(()=>{
-      try{ audioOut().disconnect(streamOut); }catch(e){}
-      streamOut = null;
-    });
-  }catch(e){ streamOut = null; }
-}
-
+/* A MediaStreamDestination into an <audio> element is the usual way to
+   escape the ringer switch, but Safari does not reliably play a Web
+   Audio stream that way. The element also never reached the DOM here,
+   so this was dead code. The supported route is audioSession.type. */
 function unlockAudio(){
   if(!audioUnlocked){
     audioUnlocked = true;
     ensureAudio();
-    routeThroughMedia();
     try{                                  // some builds only start on first output
       const g = actx.createGain();
       g.gain.value = 0.0001;
@@ -1813,7 +1902,6 @@ function unlockAudio(){
     return;
   }
   try{ if(actx && actx.state === 'suspended') actx.resume(); }catch(e){}
-  try{ const sk = el('sink'); if(sk && sk.paused && streamOut) sk.play().catch(()=>{}); }catch(e){}
 }
 /* every tap, not just the first — iOS suspends an idle context and only
    a gesture can wake it */
@@ -2777,8 +2865,7 @@ function openLog(exId, existing, day){
     <div class="chips" id="logQuick">
       ${(written ? [5,10,15,20,30] : [15,30,45,60,90]).map(v=>`<button class="chip" data-q="${v}">${v} min</button>`).join('')}
     </div>
-    <div class="field" style="margin-top:12px"><label>Duration</label><span class="val" id="logDurv"></span></div>
-    <input type="range" id="logDur" min="${written ? 1 : 5}" max="${written ? 120 : 240}" step="5" value="${Math.min(240, Math.max(5, Math.round(mins/5)*5))}">`}
+    <div class="field" style="margin-top:12px"><label>Duration</label>${steprHTML('logDur', Math.max(1, Math.round(mins)), {label:'Duration', fmt:v=>v+' min'})}</div>`}
     ${written ? '' : `
     <h2 class="sec">Effort</h2>
     <div class="chips" id="logEffort">
@@ -2802,15 +2889,12 @@ function openLog(exId, existing, day){
     });
   }
   if(wantsTime){
-    const dur = el('logDur'), durOut = el('logDurv');
-    const syncDur = ()=>{
-      durOut.textContent = fmt(+dur.value * 60);
-      setChips('logQuick', b=>+b.dataset.q === +dur.value);
-    };
-    dur.addEventListener('input', syncDur); syncDur();
+    let logMins = Math.max(1, Math.round(mins));
+    wireStepr('logDur', ()=>logMins, v=>{ logMins = v; setChips('logQuick', b=>+b.dataset.q === v); },
+      {min:1, max:600, step:1, fmt:v=>v+' min'});
     el('logQuick').addEventListener('click', e=>{
       const b = e.target.closest('.chip'); if(!b) return;
-      dur.value = b.dataset.q; syncDur();
+      logMins = +b.dataset.q; el('logDur').value = logMins+' min'; setChips('logQuick', x=>+x.dataset.q === logMins);
     });
   }
 
@@ -2819,7 +2903,7 @@ function openLog(exId, existing, day){
     const [hh,mm] = el('logTime').value.split(':').map(Number);
     if(!y || isNaN(hh)) return;
     const start = new Date(y, mo-1, d, hh, mm).getTime();
-    const minutes = wantsTime ? +el('logDur').value : 0;
+    const minutes = wantsTime ? logMins : 0;
     const ex = exercises.find(x=>x.id === el('logEx').value) || (existing ? null : pool[0]);
     const note = el('logNote').value.trim();
 
@@ -2838,7 +2922,9 @@ function openLog(exId, existing, day){
     }
     sessionsChanged();
     logKey = null;
-    popOrigin();
+    /* Editing returns to whatever you were reading; recording something
+       new exits through commitSession like every other completion. */
+    if(existing) popOrigin();
   });
 
   const del = el('logDel');
@@ -2854,15 +2940,10 @@ function openLog(exId, existing, day){
 }
 
 /* ══ app settings ══════════════════════════════════════════════ */
-function gslider(id, key, format){
-  const input = el(id), out = el(id+'v');
-  input.value = G[key];
-  const sync = ()=>{ G[key] = parseFloat(input.value); out.textContent = format(G[key]); };
-  input.addEventListener('input', ()=>{ sync(); saveGlobal(); });
-  sync();
-}
-gslider('rate','rate', v=>v.toFixed(2).replace(/0$/,'')+'×');
-gslider('pitch','pitch', v=>v.toFixed(2));
+wireStepr('rate', ()=>G.rate, v=>{ G.rate = v; saveGlobal(); },
+  {min:.5, max:2, step:.05, fmt:v=>v.toFixed(2)+'×'});
+wireStepr('pitch', ()=>G.pitch, v=>{ G.pitch = v; saveGlobal(); },
+  {min:.5, max:1.6, step:.05, fmt:v=>v.toFixed(2)});
 (function(){
   const probe = 'practice.probe';
   try{ localStorage.setItem(probe,'1'); localStorage.removeItem(probe); }
@@ -2904,6 +2985,16 @@ el('audioMode').addEventListener('click', e=>{
   setChips('audioMode', x=>x === b);
   G.audioMode = b.dataset.a; saveGlobal();
   applyAudioSession(); paintAudioNote();
+});
+el('testSched').addEventListener('click', ()=>{
+  try{
+    unlockAudio();
+    bowl(actx.currentTime + 3, 0.7, null);
+    el('testSched').textContent = 'Listening… 3s';
+    setTimeout(()=>{ el('testSched').textContent = 'Test a bell 3 seconds from now'; }, 3600);
+  }catch(e){
+    el('testSched').textContent = 'Audio unavailable';
+  }
 });
 el('doExport').addEventListener('click', ()=>{
   G.lastExport = Date.now(); saveGlobal(); renderHome();
@@ -3172,7 +3263,24 @@ css.textContent = `
   .liftHead .nm{font-family:var(--display);font-weight:700;text-transform:uppercase;font-size:19px;line-height:1.1;flex:1;}
   .liftHead .grp{font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;font-size:10px;color:var(--text-dim);}
   .restPill{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:20px;padding:6px 13px;font-family:var(--mono);font-size:12px;color:var(--text);margin:8px 0 14px;}
-  .setGrid{display:grid;grid-template-columns:22px 1fr 56px 72px 30px;gap:7px 6px;align-items:center;}
+  .setGrid{display:grid;grid-template-columns:22px 1fr 56px 72px 24px 24px;gap:7px 6px;align-items:center;}
+  /* One button, two jobs. A row with numbers in it can be continued;
+     an empty one has nothing to lose and can be removed. Keeping them
+     apart means a filled set is never one tap from gone. */
+  .setGrid .dp{height:38px;color:var(--text-dim);font-size:14px;}
+  .setGrid .dp.rm{font-size:17px;}
+  .setGrid .dp[disabled]{opacity:.2;}
+  /* the stepper and the start control share a row but are separate
+     things — one sets the length, the other runs it */
+  .restRow{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  .restRow .restPill{margin:8px 0 14px;}
+  .restGo{
+    font-family:var(--display);text-transform:uppercase;letter-spacing:.1em;
+    font-size:12px;font-weight:600;border:1px solid var(--line);border-radius:20px;
+    padding:8px 18px;margin:8px 0 14px;flex:none;
+  }
+  .restGo.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent);}
+  .setGrid .sn.cont{color:var(--text-dim);opacity:.65;}
   .lvlCell{display:flex;flex-direction:column;gap:4px;min-width:0;}
   .lvlCell input{width:100%;}
   .setGrid .hd{font-family:var(--display);text-transform:uppercase;letter-spacing:.1em;font-size:10px;color:var(--text-dim);padding-bottom:3px;}
@@ -3381,7 +3489,7 @@ function priorText(prior, idx, m){
 /* ── the workout editor ───────────────────────────────────── */
 T.fields = [
   {kind:'section', label:'Default rest'},
-  {kind:'slider', key:'rest', label:'Between sets', min:15, max:300, step:15, fmt:v=>v+'s'},
+  {kind:'slider', key:'rest', label:'Between sets', min:5, max:900, step:1, fmt:v=>v+'s'},
 ];
 /* The movement list is dynamic — it grows, reorders and deletes — so
    it stays hand-built rather than being forced into a field. */
@@ -3683,19 +3791,30 @@ function renderLift(){
       } else {
         loadCell = `<input type="number" inputmode="decimal" data-ld="${ii}.${si}" value="${st.load}" placeholder="${draft.autofill && p.text!=='—' ? '' : ''}">`;
       }
-      return `<span class="sn liftRow${st.done?' done':''}">${si+1}</span>
+      /* Drops are not numbered — the cluster is one set, however many
+         times you had to drop down inside it. */
+      const num = st.drop ? '↳' : String(it.sets.slice(0, si+1).filter(x=>!x.drop).length);
+      const filled = String(st.reps).trim() !== '';
+      /* A row with a drop hanging off it cannot be removed — the drop
+         belongs to it, so that has to go first. */
+      const hasDrop = !!(it.sets[si+1] && it.sets[si+1].drop);
+      return `<span class="sn liftRow${filled?' done':''}${st.drop?' cont':''}">${num}</span>
         <span class="pv${p.borrow?' borrow':''}">${esc(p.text)}</span>
         <input type="number" inputmode="numeric" data-rp="${ii}.${si}" value="${st.reps}">
         ${loadCell}
-        <button class="ck" data-ck="${ii}.${si}" aria-pressed="${st.done}">${st.done?'✓':''}</button>`;
+        <button class="dp" data-drop="${ii}.${si}" aria-label="Add a drop below this set">↳</button>
+        <button class="dp rm" data-rmset="${ii}.${si}" ${(hasDrop || it.sets.length < 2) ? 'disabled' : ''} aria-label="Remove this row">×</button>`;
     }).join('');
     return `<div class="liftCard">
       <div class="liftHead"><button class="nm" data-hist="${esc(it.movementId)}" style="text-align:left">${esc(m.name)} <span style="opacity:.45;font-size:13px">›</span></button>
         <span class="grp">${esc((GROUPS.find(g=>g[0]===m.group)||['','—'])[1])}</span></div>
-      <span class="restPill"><button data-rest="${ii}" data-step="down" aria-label="Less rest">−</button><b>⏱ ${it.rest}s</b><button data-rest="${ii}" data-step="up" aria-label="More rest">+</button></span>
+      <div class="restRow">
+        <span class="restPill"><button data-rest="${ii}" data-step="down" aria-label="Less rest">−</button><b>⏱ ${it.rest}s</b><button data-rest="${ii}" data-step="up" aria-label="More rest">+</button></span>
+        <button class="restGo${(tickers.has('rest') && restOwner === ii) ? ' on' : ''}" data-startrest="${ii}">${(tickers.has('rest') && restOwner === ii) ? 'Stop' : 'Start'}</button>
+      </div>
       <div class="setGrid">
         <span class="hd">Set</span><span class="hd">Previous</span>
-        <span class="hd">${repsHd}</span><span class="hd">${loadHd}</span><span class="hd"></span>
+        <span class="hd">${repsHd}</span><span class="hd">${loadHd}</span><span class="hd"></span><span class="hd"></span>
         ${rows}
       </div>
       <button class="addset" data-add="${ii}">+ Add set</button>
@@ -3710,8 +3829,7 @@ function renderLift(){
       <input type="date" id="pastDate" value="${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}">
       <input type="time" id="pastTime" value="${p2(d.getHours())}:${p2(d.getMinutes())}">
     </div>
-    <div class="field"><label>How long</label><span class="val" id="pastLenV">${fmt((draft.mins||60)*60)}</span></div>
-    <input type="range" id="pastLen" min="5" max="240" step="5" value="${draft.mins||60}">` : '';
+    <div class="field"><label>How long</label>${steprHTML('pastLen', draft.mins||60, {label:'How long', fmt:v=>v+' min'})}</div>` : '';
 
   el('liftBody').innerHTML = `
     ${when}
@@ -3748,8 +3866,6 @@ function renderLift(){
       const [y,mo,da] = el('pastDate').value.split('-').map(Number);
       const [hh,mi] = el('pastTime').value.split(':').map(Number);
       if(y && !isNaN(hh)) draft.start = new Date(y, mo-1, da, hh, mi).getTime();
-      draft.mins = +el('pastLen').value;
-      el('pastLenV').textContent = fmt(draft.mins*60);
       liftStart = draft.start;
       saveDraft();
     };
@@ -3781,16 +3897,12 @@ el('liftBody').addEventListener('input', e=>editSet(e.target));
 /* a <select> does not always raise input on iOS */
 el('liftBody').addEventListener('change', e=>{ if(e.target.dataset.lv) editSet(e.target); });
 el('liftBody').addEventListener('click', e=>{
-  const ck = e.target.closest('[data-ck]');
-  if(ck){
-    const [ii,si] = ck.dataset.ck.split('.').map(Number);
-    const st = draft.items[ii].sets[si];
-    st.done = !st.done;
-    saveDraft();
-    ck.setAttribute('aria-pressed', String(st.done));
-    ck.textContent = st.done ? '✓' : '';
-    const row = ck.parentElement.querySelectorAll('.setGrid > *');
-    if(st.done && !draft.backdate) startRest(draft.items[ii]); else stopRest();
+  const rg = e.target.closest('[data-startrest]');
+  if(rg){
+    const owner = +rg.dataset.startrest;
+    /* pressing Start on another movement moves the rest there */
+    if(tickers.has('rest') && restOwner === owner) stopRest();
+    else { stopRest(); startRest(draft.items[owner], owner); }
     renderLift();
     return;
   }
@@ -3799,6 +3911,30 @@ el('liftBody').addEventListener('click', e=>{
     const it = draft.items[+rest.dataset.rest];
     const step = rest.dataset.step === 'down' ? -15 : 15;
     it.rest = Math.min(300, Math.max(15, (it.rest || 90) + step));
+    saveDraft(); renderLift();
+    return;
+  }
+  const rm = e.target.closest('[data-rmset]');
+  if(rm){
+    const [ii,si] = rm.dataset.rmset.split('.').map(Number);
+    const it = draft.items[ii];
+    if(it.sets.length > 1) it.sets.splice(si, 1);
+    saveDraft(); renderLift();
+    return;
+  }
+  const drop = e.target.closest('[data-drop]');
+  if(drop){
+    const [ii,si] = drop.dataset.drop.split('.').map(Number);
+    const it = draft.items[ii], src = it.sets[si], m = moveOf(it.movementId);
+    /* On a ladder, a drop means the next rung down — that is the whole
+       point of it. On weights the load is left blank: you know which
+       plate you grabbed, and a wrong guess is worse than an empty box. */
+    let level = src.level || null;
+    if(m.ladder && src.level){
+      const at = m.ladder.indexOf(src.level);
+      if(at > 0) level = m.ladder[at-1];
+    }
+    it.sets.splice(si+1, 0, {reps:'', load:'', level, done:false, drop:true});
     saveDraft(); renderLift();
     return;
   }
@@ -3849,7 +3985,7 @@ function applyAutofill(){
     if(!prior) return;
     it.sets.forEach((st,i)=>{
       const p = prior.sets[i] || prior.sets[prior.sets.length-1];
-      if(!p || st.done) return;
+      if(!p) return;
       if(st.reps === ''){ st.reps = p.reps || ''; st.autoR = true; }
       if(m.measure !== 'level' && st.load === ''){ st.load = fromLb(p.load) || ''; st.autoL = true; }
       if(m.measure === 'level' && p.level && st.level !== p.level){
@@ -3863,7 +3999,7 @@ function applyAutofill(){
 function clearAutofill(){
   draft.items.forEach(it=>{
     it.sets.forEach(st=>{
-      if(st.done) return;              // a ticked set is yours now
+      if(String(st.reps).trim() !== '' && !st.autoR) return;   // yours
       if(st.autoR){ st.reps = ''; st.autoR = false; }
       if(st.autoL){ st.load = ''; st.autoL = false; }
       if(st.autoV){ st.level = st.wasLevel || st.level; st.wasLevel = null; st.autoV = false; }
@@ -3875,7 +4011,10 @@ function clearAutofill(){
 /* Holds the time remaining rather than an end timestamp. The ticker
    reports zero elapsed while paused, so the countdown freezes with no
    special case — the old version had to inch restEnd forward by hand. */
-let restCd = null, restChime = null;
+/* A rest belongs to the movement it was started from, so only that
+   movement's button should show it running. Without this every card
+   said Stop, because the ticker itself is global. */
+let restCd = null, restChime = null, restOwner = -1;
 function paintRest(){
   el('restT').textContent = fmt(restCd ? restCd.secs() : 0);
 }
@@ -3884,7 +4023,8 @@ function paintRest(){
    asking a suspended context to wake ninety seconds later with no
    gesture in sight — the reason meditation, which schedules all its
    bowls up front, was the only thing that ever sounded. */
-function startRest(item){
+function startRest(item, owner){
+  restOwner = (owner === undefined) ? draft.items.indexOf(item) : owner;
   restCd = countdown(item.rest * 1000);
   el('restN').textContent = 'Rest · ' + item.name;
   bar.classList.add('on');
@@ -3897,6 +4037,7 @@ function startRest(item){
     paintRest();
     if(restCd.done()){
       stopTicker('rest');
+      restOwner = -1;
       restChime = null;
       el('restN').textContent = 'Go';
       setTimeout(()=>{ if(!tickers.has('rest')) bar.classList.remove('on'); }, 2500);
@@ -3905,6 +4046,7 @@ function startRest(item){
 }
 function stopRest(){
   stopTicker('rest');
+  restOwner = -1;
   cancelBowl(restChime); restChime = null;
   bar.classList.remove('on');
 }
@@ -3945,7 +4087,8 @@ function finishLift(){
     movementId: it.movementId, name: it.name,
     sets: it.sets
       .filter(s=>String(s.reps).trim() !== '')
-      .map(s=>({reps:parseFloat(s.reps)||0, load:toLb(s.load), level:s.level||null}))
+      .map(s=>({reps:parseFloat(s.reps)||0, load:toLb(s.load), level:s.level||null,
+                drop: s.drop ? true : undefined}))
   })).filter(it=>it.sets.length);
 
   if(!items.length){
@@ -3977,7 +4120,7 @@ function finishLift(){
     editingLift.end = start + mins*60000;
     editingLift.dur = mins*60;
     editingLift.detail = { items, volume:volumeOf(items), unit:'lb',
-                           sets:items.reduce((n,i)=>n+i.sets.length,0) };
+                           sets:items.reduce((n,i)=>n + i.sets.filter(x=>!x.drop).length, 0) };
     sessionsChanged();
     editingLift = null; draft = null;
     stopRest(); stopElapsed();
@@ -3994,7 +4137,6 @@ function finishLift(){
   }
   write(back ? K_PAST : K_DRAFT, null);
   draft = null;
-  openExercise(cur.id);
 }
 
 })();
@@ -4071,8 +4213,11 @@ makeScreen('write', {session:true, title:'Journal', html:`
     <p class="writeMeta" id="writeWhen"></p>
     <div class="writeTimer">
       <span class="lab">Write for</span>
-      <input type="range" id="writeMins" min="0" max="60" step="5" value="0">
-      <span class="amt" id="writeMinsV">Off</span>
+      <span class="stepr" style="margin-left:auto">
+        <button type="button" data-st="writeMins" data-dir="-1" aria-label="Less">−</button>
+        <input type="text" id="writeMins" inputmode="decimal" autocomplete="off" value="Off" aria-label="Write for">
+        <button type="button" data-st="writeMins" data-dir="1" aria-label="More">+</button>
+      </span>
       <button id="writeTimerGo" hidden>Start</button>
     </div>
     <textarea id="writeText" placeholder="Write."></textarea>
@@ -4173,7 +4318,7 @@ function openWrite(existing){
   /* editing an old entry keeps the time it already holds */
   resetWriting(existing ? existing.dur : (resumed ? resumed.wrote : 0));
   const mins = (cur && cur.cfg && cur.cfg.timer) || 0;
-  el('writeMins').value = mins;
+  writeMinutes = mins;
   paintMins();
   existing ? beginEdit('write') : endEditChrome();
   show('write');
@@ -4182,9 +4327,10 @@ function openWrite(existing){
 
 /* A soft limit rather than a countdown you have to obey — the bowl
    rings, nothing is submitted, and the writing carries on if it wants to. */
+let writeMinutes = 0;
 function paintMins(){
-  const v = +el('writeMins').value;
-  el('writeMinsV').textContent = v ? v + ' min' : 'Off';
+  const v = writeMinutes;
+  el('writeMins').value = v ? v + ' min' : 'Off';
   el('writeTimerGo').hidden = !v || tickers.has('writeLimit');
   el('writeTimerGo').textContent = 'Start';
   el('writeTimerGo').classList.remove('on');
@@ -4197,7 +4343,7 @@ function stopWriteTimer(){
   if(b){ b.classList.remove('on'); b.textContent = 'Start'; }
 }
 function startWriteTimer(){
-  const v = +el('writeMins').value;
+  const v = writeMinutes;
   if(!v) return;
   const cd = countdown(v * 60000);
   const b = el('writeTimerGo');
@@ -4212,11 +4358,12 @@ function startWriteTimer(){
     }
   }, 250, {whilePaused:true});
 }
-el('writeMins').addEventListener('input', ()=>{
-  if(cur && cur.cfg){ cur.cfg.timer = +el('writeMins').value; saveEx(); }
+wireStepr('writeMins', ()=>writeMinutes, v=>{
+  writeMinutes = v;
+  if(cur && cur.cfg){ cur.cfg.timer = v; saveEx(); }
   if(tickers.has('writeLimit')) stopWriteTimer();
   paintMins();
-});
+}, {min:0, max:180, step:1, fmt:v=>v ? v+' min' : 'Off'});
 el('writeTimerGo').addEventListener('click', ()=>{
   tickers.has('writeLimit') ? (stopWriteTimer(), paintMins()) : startWriteTimer();
 });
@@ -4318,7 +4465,7 @@ css.textContent = `
   .blkRow .nm{display:block;font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .blkRow .sb{display:block;font-size:13px;color:var(--text-dim);margin-top:3px;}
   .blkRow .mv{
-    flex:none;width:38px;height:44px;font-size:17px;color:var(--text-dim);
+    flex:none;width:30px;height:44px;font-size:16px;color:var(--text-dim);
   }
   .blkRow .mv[disabled]{opacity:.2;}
   .blkKind{display:flex;flex-direction:column;gap:10px;margin-top:4px;}
@@ -4425,12 +4572,10 @@ window.openBlock = function(cfg, i){
 
     ${isC ? `
       <h2 class="sec">Target</h2>
-      <div class="field"><label>Reps</label><span class="val" id="blkTargetv">${b.target}</span></div>
-      <input type="range" id="blkTarget" min="5" max="300" step="5" value="${b.target}">`
+      <div class="field"><label>Reps</label>${steprHTML('blkTarget', b.target, {label:'Reps'})}</div>`
     : `
       <h2 class="sec">Length</h2>
-      <div class="field"><label>Time</label><span class="val" id="blkSecsv">${fmt(b.secs)}</span></div>
-      <input type="range" id="blkSecs" min="30" max="1800" step="30" value="${b.secs}">`}
+      <div class="field"><label>Time</label>${steprHTML('blkSecs', b.secs, {label:'Time', fmt, clock:true})}</div>`}
 
     ${!isG ? '' : `
       <h2 class="sec">Combos</h2>
@@ -4444,16 +4589,8 @@ window.openBlock = function(cfg, i){
     <button class="ghost danger" id="blkDel">Remove block</button>
     <button class="ghost" id="blkDup">Duplicate</button>`;
 
-  const bind = (id, key, fmtFn)=>{
-    const inp = el(id); if(!inp) return;
-    inp.addEventListener('input', ()=>{
-      b[key] = +inp.value;
-      el(id+'v').textContent = fmtFn(b[key]);
-      saveEx();
-    });
-  };
-  bind('blkSecs','secs', v=>fmt(v));
-  bind('blkTarget','target', v=>v);
+  wireStepr('blkSecs', ()=>b.secs, v=>{ b.secs = v; saveEx(); }, {min:5, max:5400, step:1, fmt, clock:true});
+  wireStepr('blkTarget', ()=>b.target, v=>{ b.target = v; saveEx(); }, {min:1, max:1000, step:1});
   el('blkName').addEventListener('input', e=>{ b.label = e.target.value.trim() || 'Block'; saveEx(); });
 
   if(isG){
