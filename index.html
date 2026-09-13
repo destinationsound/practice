@@ -615,7 +615,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '10.3';
+const APP_VERSION = '10.4';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -1120,10 +1120,20 @@ function finishToHome(){
 }
 function commitSession(rec){
   if(!rec) return null;
-  /* A written entry has no duration — its worth is that it exists.
-     Only timed types can be "too short". */
+  /* The floor exists to drop a Start immediately followed by Stop, so it
+     only applies when duration is the ONLY evidence anything happened.
+     A record carrying sets, written text or blocks is real however
+     briefly the clock ran — throwing those away lost real work, and
+     since this is the one exit, it stranded you on the screen too. */
   const k = typeOf(rec.type).kind;
-  const floor = (k === 'written' || k === 'checkoff') ? 0 : MIN_SESSION;
+  const d = rec.detail || {};
+  const hasContent = !!(
+    (d.items && d.items.length) ||
+    (d.blocks && d.blocks.length) ||
+    (d.text && String(d.text).trim()) ||
+    d.rounds || d.combos || d.completed
+  );
+  const floor = (k === 'written' || k === 'checkoff' || hasContent) ? 0 : MIN_SESSION;
   if(!(rec.dur >= floor)){ lastDiscard = rec.dur|0; return null; }
   sessions.push(rec);
   sessionsChanged();
@@ -4126,9 +4136,10 @@ function finishLift(){
     stopRest(); stopElapsed();
     return endEdit('lift');
   }
+  let stored = null;
   if(items.length){
     lastDiscard = 0;
-    commitSession(makeSession(cur, {
+    stored = commitSession(makeSession(cur, {
       start, end, dur,
       source: back ? 'manual' : 'app',
       detail:{ items, volume:volumeOf(items), unit:'lb',
@@ -4137,9 +4148,8 @@ function finishLift(){
   }
   write(back ? K_PAST : K_DRAFT, null);
   draft = null;
-  /* Nothing was recorded, so commitSession never fired and never took
-     us out. Ending an empty workout still has to end it. */
-  if(!items.length) finishToHome();
+  /* Whether or not anything was stored, Finish has to finish. */
+  if(!stored) finishToHome();
 }
 
 })();
