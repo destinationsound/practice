@@ -615,7 +615,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '10.2';
+const APP_VERSION = '10.3';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -4132,11 +4132,14 @@ function finishLift(){
       start, end, dur,
       source: back ? 'manual' : 'app',
       detail:{ items, volume:volumeOf(items), unit:'lb',
-               sets:items.reduce((n,i)=>n+i.sets.length,0) }
+               sets:items.reduce((n,i)=>n + i.sets.filter(x=>!x.drop).length, 0) }
     }));
   }
   write(back ? K_PAST : K_DRAFT, null);
   draft = null;
+  /* Nothing was recorded, so commitSession never fired and never took
+     us out. Ending an empty workout still has to end it. */
+  if(!items.length) finishToHome();
 }
 
 })();
