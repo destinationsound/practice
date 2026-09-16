@@ -615,7 +615,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '10.5';
+const APP_VERSION = '10.6';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -1120,6 +1120,8 @@ function finishToHome(){
 }
 function commitSession(rec){
   if(!rec) return null;
+  /* a record with a broken clock would vanish from every date query */
+  if(!isFinite(rec.start) || !isFinite(rec.dur)) return null;
   /* The floor exists to drop a Start immediately followed by Stop, so it
      only applies when duration is the ONLY evidence anything happened.
      A record carrying sets, written text or blocks is real however
@@ -3704,11 +3706,14 @@ function openLiftEdit(sess){
         movementId: it.movementId,
         name: it.name || m.name,
         rest: (cur && cur.cfg && cur.cfg.rest) || 90,
+        /* everything the record holds, including which rows were drops —
+           losing those turned a cluster back into ordinary sets and the
+           table no longer matched what was actually done */
         sets: it.sets.map(st=>({
           reps: st.reps == null ? '' : String(st.reps),
-          load: fromLb(st.load),
+          load: st.load ? fromLb(st.load) : '',
           level: st.level || null,
-          done: true
+          drop: !!st.drop
         }))
       };
     })
@@ -3879,7 +3884,10 @@ function renderLift(){
       liftStart = draft.start;
       saveDraft();
     };
-    ['pastDate','pastTime','pastLen'].forEach(id=>el(id).addEventListener('input', sync));
+    ['pastDate','pastTime'].forEach(id=>el(id).addEventListener('input', sync));
+    /* the length is a stepper now, so it needs wiring rather than a raw read */
+    wireStepr('pastLen', ()=>draft.mins || 60, v=>{ draft.mins = v; saveDraft(); },
+      {min:1, max:600, step:1, fmt:v=>v+' min'});
   }
 }
 
@@ -4134,7 +4142,10 @@ function finishLift(){
     const [y,mo,da] = (el('pastDate') ? el('pastDate').value : '').split('-').map(Number);
     const [hh,mi]   = (el('pastTime') ? el('pastTime').value : '').split(':').map(Number);
     const start = (y && !isNaN(hh)) ? new Date(y, mo-1, da, hh, mi).getTime() : editingLift.start;
-    const mins  = el('pastLen') ? +el('pastLen').value : Math.round((editingLift.dur||0)/60);
+    /* read the draft, not the field: the field reads "60 min", and
+       +"60 min" is NaN — which corrupted the duration and the end
+       timestamp, and made an edited entry vanish. */
+    const mins  = (draft && draft.mins) || Math.round((editingLift.dur||0)/60) || 1;
     editingLift.start = start;
     editingLift.end = start + mins*60000;
     editingLift.dur = mins*60;
