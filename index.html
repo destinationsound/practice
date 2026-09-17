@@ -130,6 +130,15 @@
   .nagRow .name{display:block;font-size:16px;}
   .nagRow .sub{display:block;font-size:13px;color:var(--text-dim);margin-top:3px;}
   .nagRow .go{color:var(--text-dim);flex:none;}
+  /* A thrown listener is invisible on a phone — the tap just does
+     nothing. This makes the failure readable instead. */
+  #errBar{
+    position:fixed;left:0;right:0;bottom:0;z-index:99;
+    background:var(--danger);color:#fff;padding:12px 16px;
+    font-family:var(--mono);font-size:12px;line-height:1.5;
+    max-height:45vh;overflow:auto;white-space:pre-wrap;
+  }
+  #errBar b{display:block;font-family:var(--display);letter-spacing:.1em;margin-bottom:6px;}
   .nothing{color:var(--text-dim);font-size:13px;padding:16px 0;border-bottom:1px solid var(--line);}
 
   .addbtn{width:100%;margin-top:24px;padding:16px;border:1px dashed var(--line);border-radius:2px;text-align:center;color:var(--text-dim);font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;font-size:13px;font-weight:600;}
@@ -280,6 +289,7 @@
   <h1 id="title">BETR</h1>
 </div>
 
+<div id="errBar" hidden></div>
 <main>
   <section class="screen on" id="s-home"><div class="scroll" id="homeBody"></div></section>
   <section class="screen" id="s-newtype"><div class="scroll" id="typeList"></div></section>
@@ -615,7 +625,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '10.6';
+const APP_VERSION = '10.9';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -871,6 +881,27 @@ const summaryOf = ex => ex.logOnly ? 'Logged by hand'
 const K_GLOBAL='practice.global.v1', K_EX='practice.exercises.v1', K_SESSIONS='practice.sessions.v1';
 let G = {rate:.95, pitch:1, callouts:'words', voiceURI:null, units:'lb', audioMode:'playback', lastExport:null};
 let exercises = [], sessions = [];
+
+/* Anything that escapes a handler lands here, on screen, with the line
+   that threw. Tap it to dismiss. */
+function showError(kind, msg, where){
+  try{
+    const bar = document.getElementById('errBar');
+    if(!bar) return;
+    bar.hidden = false;
+    bar.innerHTML = '<b>' + kind + '</b>' +
+      String(msg).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) +
+      (where ? '\n' + String(where).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) : '');
+    bar.onclick = ()=>{ bar.hidden = true; };
+  }catch(e){}
+}
+window.addEventListener('error', e=>{
+  showError('Something went wrong', e.message,
+    (e.filename ? '' : '') + 'line ' + e.lineno + ':' + e.colno);
+});
+window.addEventListener('unhandledrejection', e=>{
+  showError('Unfinished action', (e.reason && e.reason.message) || e.reason, '');
+});
 
 const read = (k,f)=>{ try{ const v=JSON.parse(localStorage.getItem(k)||'null'); return v==null?f:v; }catch(e){ return f; } };
 /* Storage can hold valid JSON of the wrong shape — a half-finished
@@ -1451,8 +1482,18 @@ el('homeBody').addEventListener('click', e=>{
     const rec = sessions.filter(x=>x.exerciseId === b.dataset.e && inRange(x, d, z))
                         .sort((x,y)=>y.start - x.start)[0];
     if(rec) return editSession(rec);
-    /* A past day cannot be started, only filled in. */
-    if(dayOffset < 0){ cur = ex || cur; return openLog(b.dataset.e, null, d); }
+    /* A past day cannot be started, only filled in — through whatever
+       form that type uses for it. Strength has a full table with its own
+       date; everything else has the duration form. Both get the day. */
+    if(dayOffset < 0){
+      cur = ex || cur;
+      const ty = typeOf(cur.type);
+      /* logOnly means the app does not RUN the session — it says nothing
+         about how you record one. A class you did away from the phone
+         still wants its set table. */
+      if(ex && ty.logPast){ loadCfg(cur); return ty.logPast(d); }
+      return openLog(b.dataset.e, null, d);
+    }
   }
   openExercise(b.dataset.e);
 });
@@ -1573,7 +1614,7 @@ el('exerciseDetail').addEventListener('click', e=>{
     /* Sets and weights are recalled facts, so those types reopen their
        own table. Combos and rounds are generated, so those get the
        duration form instead — inventing a combo count would be fiction. */
-    if(!cur.logOnly && ty.logPast){ loadCfg(cur); return ty.logPast(); }
+    if(ty.logPast){ loadCfg(cur); return ty.logPast(logDay); }
     return openLog(cur.id, null);
   }
   if(e.target.closest('#editEx')) openEditor(cur, false);
@@ -2900,8 +2941,10 @@ function openLog(exId, existing, day){
       effort = b.dataset.e; paintEffort();
     });
   }
+  /* declared out here: the save handler reads it, and scoping it inside
+     the block made "Log session" throw and do nothing at all */
+  let logMins = Math.max(1, Math.round(mins));
   if(wantsTime){
-    let logMins = Math.max(1, Math.round(mins));
     wireStepr('logDur', ()=>logMins, v=>{ logMins = v; setChips('logQuick', b=>+b.dataset.q === v); },
       {min:1, max:600, step:1, fmt:v=>v+' min'});
     el('logQuick').addEventListener('click', e=>{
@@ -3684,7 +3727,7 @@ T.templates = [
    and rounds are generated by the app, which is why those types only
    get duration and effort. */
 T.logPastLabel = 'Log a past workout';
-T.logPast = function(){ openLift(true); };
+T.logPast = function(when){ openLift(true, when); };
 T.open = function(){ openLift(false); };
 
 /* Editing a logged workout rebuilds the table from what was RECORDED,
@@ -3725,13 +3768,14 @@ function openLiftEdit(sess){
 }
 T.editSession = sess => openLiftEdit(sess);
 
-function openLift(backdate){
+function openLift(backdate, when){
   editingLift = null;
   const sec = el('s-lift');
   if(sec){ sec.classList.add('sessionScreen'); sec.classList.remove('editing'); }
   delete BACKTO.lift;
   const c = cur.cfg;
   if(!c.items || !c.items.length){
+    /* nothing to fill in yet — say why rather than just appearing here */
     openEditor(cur, false);
     const box = el('mvHint');
     if(box){ box.textContent = 'Add at least one movement before starting.'; box.hidden = false; }
@@ -3747,7 +3791,10 @@ function openLift(backdate){
        total is then carried onto a monotonic mark for everything after. */
     awayMs = Math.max(0, Date.now() - (saved.touched || saved.start));
   } else {
-    liftStart = backdate ? Date.now() - 60*60000 : Date.now();
+    /* a day handed in from the home list opens on that day, mid-morning */
+    liftStart = when ? (dayStart(when).getTime() + 10*3600000)
+              : backdate ? Date.now() - 60*60000
+              : Date.now();
     draft = {
       exerciseId: cur.id, start: liftStart, autofill:false,
       backdate: !!backdate, mins: 60,
