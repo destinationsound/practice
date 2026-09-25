@@ -432,6 +432,7 @@ const CAT = [
   {k:'jabBody',    g:'punch', num:'1', nsay:'one to the body', side:'lead', lvl:2, w:3,  open:.9,  close:.5, r:1.9, xr:1.8, label:L=>`jab to the body`},
   {k:'crossBody',  g:'punch', num:'2', nsay:'two to the body', side:'rear', lvl:2, w:3,  open:.4,  close:.7, r:1.8, xr:1.7, label:L=>`cross to the body`},
   {k:'hookBody',   g:'punch', num:'3', nsay:'three to the body', side:'lead', lvl:2, w:3,  open:.3,  close:.7, r:1.5, xr:1.5, label:L=>`${L.lead} hook to the body`},
+  {k:'rearHookBody', g:'punch', num:'4', nsay:'four to the body', side:'rear', lvl:2, w:3, open:.3, close:.8, r:1.5, xr:1.5, label:L=>`${L.rear} hook to the body`},
   // kicks
   {k:'leadTeep',   g:'kick', side:'lead', lvl:1, w:5, open:1.8, close:1.2, r:3.0, xr:3.0, label:L=>`${L.lead} teep`},
   {k:'rearTeep',   g:'kick', side:'rear', lvl:1, w:4, open:1.3, close:1.2, r:3.0, xr:3.0, label:L=>`${L.rear} teep`},
@@ -441,6 +442,7 @@ const CAT = [
   {k:'leadBody',   g:'kick', side:'lead', lvl:3, w:3, open:.5,  close:1.6, r:2.6, xr:2.3, label:L=>`${L.lead} body kick`},
   {k:'switchKick', g:'kick', side:'lead', lvl:1, w:6, open:.7,  close:2.0, r:2.6, xr:2.3, label:L=>`switch kick`},
   {k:'switchLow',  g:'kick', side:'lead', lvl:2, w:3, open:.4,  close:1.8, r:2.5, xr:2.3, label:L=>`switch low kick`},
+  {k:'switchHead', g:'kick', side:'lead', lvl:3, w:2, open:.2,  close:1.9, r:2.6, xr:2.4, label:L=>`switch head kick`},
   /* set aside for now — uncommenting restores them fully, since their
      transition-table entries are still in place */
   // {k:'questionMk', g:'kick', side:'rear', lvl:3, w:2, open:.1,  close:1.8, r:2.6, xr:2.4, label:L=>`question mark kick`, spin:1},
@@ -450,7 +452,8 @@ const CAT = [
   {k:'leadKnee',   g:'knee', side:'lead', lvl:1, w:5, open:.4, close:1.6, r:1.2, xr:1.1, label:L=>`${L.lead} knee`},
   /* a conditioning drill on the bag rather than a combo strike */
   // {k:'skipKnee',   g:'knee', side:'lead', lvl:2, w:4, open:.8, close:1.8, r:2.2, xr:1.4, label:L=>`skip knee`},
-  {k:'longKnee',   g:'knee', side:'rear', lvl:3, w:3, open:.3, close:1.6, r:1.6, xr:1.3, label:L=>`${L.rear} long knee`},
+  {k:'rearLongKnee', g:'knee', side:'rear', lvl:3, w:3, open:.3, close:1.6, r:1.6, xr:1.3, label:L=>`${L.rear} long knee`},
+  {k:'leadLongKnee', g:'knee', side:'lead', lvl:3, w:2, open:.3, close:1.5, r:1.6, xr:1.3, label:L=>`${L.lead} long knee`},
   // elbows
   {k:'leadElbow',  g:'elbow', side:'lead', lvl:2, w:6, open:.3, close:1.6, r:1.2, xr:1.1, label:L=>`${L.lead} elbow`},
   {k:'rearElbow',  g:'elbow', side:'rear', lvl:2, w:6, open:.3, close:1.6, r:1.2, xr:1.1, label:L=>`${L.rear} elbow`},
@@ -478,7 +481,7 @@ CAT.forEach((t,i)=>t.id=i);
 const BY_KEY = Object.fromEntries(CAT.map(t=>[t.k,t]));
 /* renamed strikes keep answering to their old names, so combos you
    saved before the rename still play them */
-const RENAMED = {upElbow:'rearUpElbow', downElbow:'leadUpElbow', check:'leadCheck'};
+const RENAMED = {upElbow:'rearUpElbow', downElbow:'leadUpElbow', check:'leadCheck', longKnee:'rearLongKnee'};
 Object.entries(RENAMED).forEach(([old,now])=>{ if(BY_KEY[now]) BY_KEY[old] = BY_KEY[now]; });
 
 /* ══ transition table ══════════════════════════════════════════
@@ -486,16 +489,17 @@ Object.entries(RENAMED).forEach(([old,now])=>{ if(BY_KEY[now]) BY_KEY[old] = BY_
    would actually call; below 1 is mechanically awkward. Pairs that
    aren't listed still occur, just rarely. */
 const LINK = {
-  jab:       {cross:3.2, jab:1.4, leadHook:1.2, rearLow:1.7, rearBody:1.7, switchKick:1.9, rearTeep:1.3, rearHead:.9, overhand:1.3, crossBody:1.4, leadTeep:.5, leadUpper:.5, skipKnee:1.2},
-  cross:     {leadHook:3.2, rearBody:2.8, rearLow:2.6, rearHead:1.5, leadUpper:1.5, rearKnee:1.6, hookBody:1.4, leadElbow:1.3, switchKick:1.3, pivot:1.2, rearHook:.15, leadTeep:.5},
-  leadHook:  {rearBody:2.8, rearLow:2.4, cross:1.7, rearUpper:1.7, rearKnee:1.6, rearElbow:1.5, rearHook:1.2, spinElbow:1.3, spinBack:1.1, leadHook:.3, switchKick:.7},
+  jab:       {cross:3.2, jab:1.4, leadHook:1.2, rearLow:1.7, rearBody:1.7, switchKick:1.9, rearTeep:1.3, rearHead:.9, overhand:1.3, crossBody:1.4, leadTeep:.5, leadUpper:.5, skipKnee:1.2, switchHead:.9},
+  cross:     {leadHook:3.2, rearBody:2.8, rearLow:2.6, rearHead:1.5, leadUpper:1.5, rearKnee:1.6, hookBody:1.4, leadElbow:1.3, switchKick:1.3, pivot:1.2, rearHook:.15, leadTeep:.5, rearHookBody:1.1},
+  leadHook:  {rearBody:2.8, rearLow:2.4, cross:1.7, rearUpper:1.7, rearKnee:1.6, rearElbow:1.5, rearHook:1.2, spinElbow:1.3, spinBack:1.1, leadHook:.3, switchKick:.7, rearHookBody:1.3},
   rearHook:  {leadHook:2.3, leadUpper:1.5, switchKick:1.5, leadKnee:1.3, leadElbow:1.3, rearBody:.7},
   leadUpper: {rearHook:2.5, cross:1.7, leadHook:1.3, rearKnee:1.5, rearElbow:1.5, rearUpper:.4},
   rearUpper: {leadHook:2.7, leadElbow:1.5, leadKnee:1.3, rearBody:1.2, cross:.4},
   overhand:  {leadHook:2.3, rearLow:1.7, rearBody:1.6, leadUpper:1.3},
   jabBody:   {cross:2.3, rearHead:1.7, leadHook:1.6, overhand:1.5},
   crossBody: {leadHook:2.5, rearHead:1.5, rearBody:1.4},
-  hookBody:  {leadHook:2.5, cross:1.7, rearBody:1.6},
+  hookBody:  {leadHook:2.5, cross:1.7, rearBody:1.6, rearHookBody:1.4},
+  rearHookBody: {leadHook:2.4, leadUpper:1.4, switchKick:1.3, hookBody:1.3},
   leadTeep:  {rearTeep:1.3, jab:1.3, rearBody:1.4, leadTeep:1.0, pivot:1.0, cross:.7, rearLow:.7},
   rearTeep:  {jab:1.5, leadTeep:1.3, rearBody:1.2, cross:.8},
   rearLow:   {jab:1.7, rearHead:1.7, leadHook:1.5, cross:1.4, rearBody:1.2, leadTeep:1.2, pivot:1.2, rearLow:.8},
@@ -503,13 +507,15 @@ const LINK = {
   rearHead:  {pivot:1.5, stepBack:1.2, jab:1.2, rearLow:1.0},
   leadBody:  {cross:1.7, jab:1.3, leadHook:1.2},
   switchKick:{cross:1.7, rearLow:1.3, jab:1.2, leadHook:1.2, pivot:1.2},
+  switchHead:{pivot:1.5, stepBack:1.2, cross:1.2, rearLow:1.0},
   switchLow: {cross:1.7, jab:1.5, rearBody:1.0},
   questionMk:{pivot:1.5, jab:1.0},
   spinBack:  {pivot:1.3, jab:1.0},
   rearKnee:  {leadElbow:1.9, rearElbow:1.6, leadKnee:1.7, leadHook:1.4, clinch:1.2},
   leadKnee:  {rearElbow:1.9, rearKnee:1.5, cross:1.4, rearHook:1.2},
   skipKnee:  {leadHook:1.5, rearElbow:1.4, cross:1.3},
-  longKnee:  {leadElbow:1.5, leadHook:1.2, rearKnee:1.3},
+  rearLongKnee: {leadElbow:1.5, leadHook:1.2, rearKnee:1.3, leadLongKnee:1.1},
+  leadLongKnee: {rearElbow:1.5, cross:1.2, leadKnee:1.3, rearLongKnee:1.1},
   leadElbow: {rearElbow:1.7, rearKnee:1.9, leadUpElbow:1.3, rearHook:1.2},
   rearElbow: {leadElbow:1.7, rearKnee:1.6, leadKnee:1.5, leadHook:1.4},
   rearUpElbow:   {leadHook:1.6, leadElbow:1.4, rearKnee:1.4},
@@ -525,7 +531,7 @@ const LINK = {
   rearBodyBlock: {leadHook:2.2, jab:1.8, leadKnee:1.5},
   pivot:     {jab:2.1, cross:1.2, rearLow:1.2},
   stepBack:  {leadTeep:2.2, jab:1.7, rearBody:1.3, cross:1.2},
-  clinch:    {rearKnee:3.0, leadKnee:2.5, longKnee:1.9, leadElbow:1.7, jab:.05, cross:.05, rearBody:.05, rearLow:.05},
+  clinch:    {rearKnee:3.0, leadKnee:2.5, rearLongKnee:1.9, leadElbow:1.7, jab:.05, cross:.05, rearBody:.05, rearLow:.05, leadLongKnee:1.2},
 };
 
 /* ══ combos coaches actually call ══════════════════════════════ */
@@ -596,14 +602,30 @@ function libraryCombo(){
   return fits[Math.floor(Math.random()*fits.length)].k.map(key=>BY_KEY[key]);
 }
 
+/* Block & counter opens on a defensive move and answers it with hands
+   and feet only. The transition table already says what each block
+   feeds into, so the drill needs no new data — only a different way in. */
 function generatedCombo(){
-  const p = pool();
+  const counter = S.flow === 'counter';
+  const all = pool();
+  const guards  = all.filter(t=>t.g === 'defense');
+  const strikes = all.filter(t=>t.g !== 'defense');
+  if(counter && (!guards.length || !strikes.length)) return [];
+  const p = counter ? strikes : all;
   if(!p.length) return [];
   const n = rnd(S.min, Math.max(S.min, S.max));
   const out = [];
   let prev = null, prevSide = null, range = 2.2, usedSpin = false, defCount = 0, runG = 0;
 
-  for(let i=0;i<n;i++){
+  if(counter){
+    /* the block is chosen on its own merits, then answered */
+    const openW = guards.map(t=>t.w * t.open);
+    let r = Math.random() * openW.reduce((a,b)=>a+b, 0), pick = guards[0];
+    for(let j=0;j<guards.length;j++){ r -= openW[j]; if(r <= 0){ pick = guards[j]; break; } }
+    out.push(pick); prev = pick; range = pick.r;
+  }
+
+  for(let i=out.length;i<n;i++){
     const last = i === n-1;
     const scored = p.map(t=>{
       let w = t.w * (i===0 ? t.open : 1) * (last ? t.close : 1);
@@ -644,7 +666,8 @@ function generatedCombo(){
 }
 
 function buildCombo(){
-  if(S.flow !== 'free'){
+  /* the drill is the point of counter flow, so it is always generated */
+  if(S.flow !== 'free' && S.flow !== 'counter'){
     const lean = S.flow === 'library' ? 1 : .55;
     if(Math.random() < lean){
       const c = libraryCombo();
@@ -663,7 +686,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '11.3';
+const APP_VERSION = '11.5';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -769,7 +792,7 @@ const TYPES = {
        fmt:v=>v.toFixed(2)+'s'},
 
       {when:c=>c.shape!=='circuit', kind:'chips', key:'flow', label:'Flow',
-       options:[['library','Set combos'],['mixed','Mixed'],['free','Freestyle']]},
+       options:[['library','Set combos'],['mixed','Mixed'],['free','Freestyle'],['counter','Block & counter']]},
       {when:c=>c.shape!=='circuit', kind:'note', text:'Set combos come from a list a coach would call. Freestyle builds new ones from which strikes actually feed into each other. Mixed alternates.'},
 
       {when:c=>c.shape!=='circuit', kind:'chips', key:'level', label:'Level', type:'number',
@@ -2532,7 +2555,8 @@ async function callout(tok){
     highlight(i);
     await say(spoken(combo[i], L));
     if(!alive(tok)) return;
-    if(i < combo.length-1 && S.gap > 0) await wait(S.gap*1000);
+    if(i < combo.length-1 && S.gap > 0)
+      await wait(S.gap * 1000 * (combo[i].g === 'defense' && S.flow === 'counter' ? 2.2 : 1));
   }
   if(!alive(tok)) return;
   highlight(-1);
@@ -4978,7 +5002,8 @@ async function callBlockCombo(tok, b, n){
     highlight(i);
     await say(spoken(combo[i], L));
     if(!goOn(tok)) return;
-    if(i < combo.length - 1 && S.gap > 0) await wait(S.gap * 1000);
+    if(i < combo.length - 1 && S.gap > 0)
+      await wait(S.gap * 1000 * (combo[i].g === 'defense' && S.flow === 'counter' ? 2.2 : 1));
   }
   highlight(-1);
   el('statusL').textContent = 'Reset';
