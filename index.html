@@ -700,7 +700,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '11.7';
+const APP_VERSION = '11.8';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -3636,15 +3636,49 @@ function priorSets(exerciseId, movementId){
   if(any) return {sets: any.detail.items.find(i=>i.movementId===movementId).sets, borrowed:true};
   return null;
 }
-function priorText(prior, idx, m){
+/* Sets and the drops hanging off them, as clusters. Counting raw rows
+   made every set after a drop line up against the wrong one — set 3
+   would read back the drop instead of set 3. */
+function clusters(sets){
+  const out = [];
+  (sets || []).forEach(s=>{
+    if(s.drop && out.length) out[out.length-1].drops.push(s);
+    else out.push({main:s, drops:[]});
+  });
+  return out;
+}
+/* Where a row sits: which cluster, and how deep into its drops. */
+function rowSpot(sets, si){
+  let c = -1, d = 0;
+  for(let i=0;i<=si;i++){
+    if(sets[i] && sets[i].drop){ d++; } else { c++; d = 0; }
+  }
+  return {c, d};
+}
+function setText(s, m){
+  if(!s) return '—';
+  if(m.measure === 'time') return `${s.reps || 0}s${s.level ? ' '+s.level : ''}`;
+  if(m.measure === 'level') return `${s.reps||0} × ${s.level||'—'}${s.load?` +${fromLb(s.load)}`:''}`;
+  return `${s.reps||0} × ${fromLb(s.load)} ${unitName().toLowerCase()}`;
+}
+/* A main row shows last time's matching set and trails its drops after
+   it, so a cluster is visible before you rebuild it. A drop row shows
+   the drop that sat in the same place. */
+function priorText(prior, idx, m, sets){
   if(!prior) return {text:'—', borrow:false};
-  const s = prior.sets[idx] || prior.sets[prior.sets.length-1];
-  if(!s) return {text:'—', borrow:false};
-  const fell = !prior.sets[idx];
-  let text;
-  if(m.measure === 'time') text = `${s.reps || 0}s${s.level ? ' '+s.level : ''}`;
-  else if(m.measure === 'level') text = `${s.reps||0} × ${s.level||'—'}${s.load?` +${fromLb(s.load)}`:''}`;
-  else text = `${s.reps||0} × ${fromLb(s.load)} ${unitName().toLowerCase()}`;
+  const cl = clusters(prior.sets);
+  if(!cl.length) return {text:'—', borrow:false};
+  const spot = sets ? rowSpot(sets, idx) : {c: idx, d: 0};
+
+  if(spot.d > 0){
+    const from = cl[spot.c];
+    const s = from && from.drops[spot.d - 1];
+    return {text: s ? setText(s, m) : '—', borrow: !s};
+  }
+  const group = cl[spot.c] || cl[cl.length - 1];
+  const fell = !cl[spot.c];
+  let text = setText(group.main, m);
+  if(group.drops.length) text += ' ' + group.drops.map(d=>'↳ ' + setText(d, m)).join(' ');
   return {text, borrow: prior.borrowed || fell};
 }
 
@@ -3946,7 +3980,7 @@ function renderLift(){
     const loadHd = m.measure === 'time' ? '' : m.measure === 'level' ? 'Level' : unitName();
     const repsHd = m.measure === 'time' ? 'Secs' : 'Reps';
     const rows = it.sets.map((st, si)=>{
-      const p = priorText(prior, si, m);
+      const p = priorText(prior, si, m, it.sets);
       let loadCell;
       if(m.measure === 'level'){
         /* Selecting the weighted rung reveals a field for the added
