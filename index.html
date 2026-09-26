@@ -476,6 +476,14 @@ const CAT = [
   {k:'pivot',     g:'defense', side:'none', lvl:2, w:5, open:.3,  close:1.6, r:2.0, xr:2.4, label:L=>`pivot out`},
   {k:'stepBack',  g:'defense', side:'none', lvl:2, w:4, open:.8,  close:1.2, r:2.2, xr:2.8, label:L=>`step back`},
   {k:'clinch',    g:'defense', side:'none', lvl:3, w:4, open:.6,  close:.4, r:1.4, xr:1.0, label:L=>`clinch`},
+  /* Clinch-range grips. Side is spoken but stays 'none', like the rest
+     of defence, so a grip does not take a turn in the lead/rear rhythm
+     of the striking. Range sits with clinch, which is why the tables
+     below suppress punching out of them. */
+  {k:'leadInWrist',  g:'defense', side:'none', lvl:2, w:2,  open:.8, close:.5, r:1.3, xr:1.0, label:L=>`${L.lead} inside wrist control`},
+  {k:'rearInWrist',  g:'defense', side:'none', lvl:2, w:2,  open:.8, close:.5, r:1.3, xr:1.0, label:L=>`${L.rear} inside wrist control`},
+  {k:'leadOutWrist', g:'defense', side:'none', lvl:2, w:1.5, open:.8, close:.5, r:1.3, xr:1.0, label:L=>`${L.lead} outside wrist control`},
+  {k:'rearOutWrist', g:'defense', side:'none', lvl:2, w:1.5, open:.8, close:.5, r:1.3, xr:1.0, label:L=>`${L.rear} outside wrist control`},
 ];
 CAT.forEach((t,i)=>t.id=i);
 const BY_KEY = Object.fromEntries(CAT.map(t=>[t.k,t]));
@@ -496,9 +504,9 @@ const LINK = {
   leadUpper: {rearHook:2.5, cross:1.7, leadHook:1.3, rearKnee:1.5, rearElbow:1.5, rearUpper:.4},
   rearUpper: {leadHook:2.7, leadElbow:1.5, leadKnee:1.3, rearBody:1.2, cross:.4},
   overhand:  {leadHook:2.3, rearLow:1.7, rearBody:1.6, leadUpper:1.3},
-  jabBody:   {cross:2.3, rearHead:1.7, leadHook:1.6, overhand:1.5},
-  crossBody: {leadHook:2.5, rearHead:1.5, rearBody:1.4},
-  hookBody:  {leadHook:2.5, cross:1.7, rearBody:1.6, rearHookBody:1.4},
+  jabBody:   {cross:2.3, rearHead:1.7, leadHook:1.6, overhand:1.5, leadInWrist:1.4},
+  crossBody: {leadHook:2.5, rearHead:1.5, rearBody:1.4, leadInWrist:1.8, leadOutWrist:1.2},
+  hookBody:  {leadHook:2.5, cross:1.7, rearBody:1.6, rearHookBody:1.4, rearInWrist:1.3},
   rearHookBody: {leadHook:2.4, leadUpper:1.4, switchKick:1.3, hookBody:1.3},
   leadTeep:  {rearTeep:1.3, jab:1.3, rearBody:1.4, leadTeep:1.0, pivot:1.0, cross:.7, rearLow:.7},
   rearTeep:  {jab:1.5, leadTeep:1.3, rearBody:1.2, cross:.8},
@@ -531,7 +539,12 @@ const LINK = {
   rearBodyBlock: {leadHook:2.2, jab:1.8, leadKnee:1.5},
   pivot:     {jab:2.1, cross:1.2, rearLow:1.2},
   stepBack:  {leadTeep:2.2, jab:1.7, rearBody:1.3, cross:1.2},
-  clinch:    {rearKnee:3.0, leadKnee:2.5, rearLongKnee:1.9, leadElbow:1.7, jab:.05, cross:.05, rearBody:.05, rearLow:.05, leadLongKnee:1.2},
+  clinch:    {rearKnee:3.0, leadKnee:2.5, rearLongKnee:1.9, leadElbow:1.7, jab:.05, cross:.05, rearBody:.05, rearLow:.05, leadLongKnee:1.2, leadInWrist:1.4, rearInWrist:1.4},
+  /* a grip leads to knees and short elbows, never back out to boxing */
+  leadInWrist:  {rearElbow:2.6, rearKnee:2.4, clinch:1.8, leadKnee:1.6, rearLongKnee:1.3, leadElbow:.6, jab:.05, cross:.05, rearBody:.05, rearLow:.05},
+  rearInWrist:  {leadElbow:2.6, leadKnee:2.4, clinch:1.8, rearKnee:1.6, leadLongKnee:1.3, rearElbow:.6, jab:.05, cross:.05, rearBody:.05, rearLow:.05},
+  leadOutWrist: {rearElbow:2.2, rearKnee:2.0, clinch:1.7, leadLongKnee:1.4, jab:.05, cross:.05, rearBody:.05, rearLow:.05},
+  rearOutWrist: {leadElbow:2.2, leadKnee:2.0, clinch:1.7, rearLongKnee:1.4, jab:.05, cross:.05, rearBody:.05, rearLow:.05},
 };
 
 /* ══ combos coaches actually call ══════════════════════════════ */
@@ -551,6 +564,7 @@ const LIB = [
   {lvl:1, k:['jab','rearBody']},
   {lvl:1, k:['leadTeep','cross','rearLow']},
   {lvl:1, k:['leadTeep','rearBody']},
+  {lvl:2, k:['jab','crossBody','leadInWrist','rearElbow']},
   {lvl:1, k:['leadCheck','rearLow']},
   {lvl:1, k:['rearCheck','leadHook']},
   {lvl:1, k:['jab','cross','rearKnee']},
@@ -686,7 +700,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '11.5';
+const APP_VERSION = '11.7';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -4661,13 +4675,17 @@ css.textContent = `
     font-size:15px;font-weight:700;display:block;
   }
   .blkKind .d{color:var(--text-dim);font-size:13px;display:block;margin-top:5px;line-height:1.4;}
-  .comboRow{
-    width:100%;display:flex;align-items:center;gap:12px;
-    padding:14px 0;border-bottom:1px solid var(--line);text-align:left;
+  /* a row, not a button: the controls beside it have to be real buttons
+     and a button cannot be nested inside one */
+  .comboRow{display:flex;align-items:center;border-bottom:1px solid var(--line);}
+  .comboRow .open{
+    flex:1;min-width:0;display:flex;align-items:center;gap:12px;
+    padding:14px 0;text-align:left;
   }
   .comboRow .n{font-family:var(--mono);font-size:12px;color:var(--text-dim);width:1.3em;flex:none;}
   .comboRow .s{flex:1;min-width:0;font-size:15px;}
-  .comboRow .x{color:var(--text-dim);font-size:17px;flex:none;}
+  .comboRow .mv{flex:none;width:30px;height:44px;font-size:16px;color:var(--text-dim);}
+  .comboRow .mv[disabled]{opacity:.2;}
   .pickGrid{display:flex;flex-wrap:wrap;gap:7px;margin-top:2px;}
   .pickGrid button{
     border:1px solid var(--line);border-radius:2px;padding:10px 12px;font-size:14px;
@@ -4783,11 +4801,16 @@ window.openBlock = function(cfg, i){
         ? `<p class="note">Uses the combo engine — it builds fresh combos from strikes that actually feed into each other.</p>`
         : (b.combos && b.combos.length
             ? b.combos.map((ids,ci)=>`
-                <button class="comboRow" data-combo="${ci}">
-                  <span class="n">${ci+1}</span>
-                  <span class="s">${esc(comboText(ids))}</span>
-                  <span class="x">›</span>
-                </button>`).join('')
+                <div class="comboRow">
+                  <button class="open" data-combo="${ci}">
+                    <span class="n">${ci+1}</span>
+                    <span class="s">${esc(comboText(ids))}</span>
+                  </button>
+                  <button class="mv" data-cmv="up:${ci}" ${ci === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
+                  <button class="mv" data-cmv="down:${ci}" ${ci === b.combos.length-1 ? 'disabled' : ''} aria-label="Move down">↓</button>
+                  <button class="mv" data-cdup="${ci}" aria-label="Duplicate">⧉</button>
+                  <button class="mv" data-cdel="${ci}" aria-label="Remove">×</button>
+                </div>`).join('')
             : `<p class="note" style="margin:0">No combos yet.</p>`)
           + `<button class="addbtn" id="addCombo">+ Add combo</button>
              <h2 class="sec">Order</h2>
@@ -4807,6 +4830,28 @@ window.openBlock = function(cfg, i){
     };
     /* bound once per open — paintSource runs again on every toggle */
     el('blkCombo').addEventListener('click', ev=>{
+      const mv = ev.target.closest('[data-cmv]');
+      if(mv){
+        const [dir, at] = mv.dataset.cmv.split(':');
+        const i = +at, j = dir === 'up' ? i-1 : i+1;
+        if(j < 0 || j >= b.combos.length) return;
+        [b.combos[i], b.combos[j]] = [b.combos[j], b.combos[i]];
+        saveEx(); paintSource();
+        return;
+      }
+      const dup = ev.target.closest('[data-cdup]');
+      if(dup){
+        const i = +dup.dataset.cdup;
+        b.combos.splice(i+1, 0, b.combos[i].slice());
+        saveEx(); paintSource();
+        return;
+      }
+      const del = ev.target.closest('[data-cdel]');
+      if(del){
+        b.combos.splice(+del.dataset.cdel, 1);
+        saveEx(); paintSource();
+        return;
+      }
       const r = ev.target.closest('[data-combo]'); if(!r) return;
       openCombo(b, +r.dataset.combo);
     });
