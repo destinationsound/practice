@@ -151,7 +151,39 @@
   .subgrp .ct{font-family:var(--mono);font-size:12px;color:var(--text-dim);}
   .subgrp .chev{width:16px;text-align:center;color:var(--text-dim);font-size:14px;}
   .subgrp.folded{padding-bottom:14px;border-bottom:1px solid var(--line);}
-  .statHead{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  /* the controls stay put while the figures scroll under them */
+  /* The scroll area has 20px of padding, and a sticky element stops at
+     the padding edge — which left a transparent strip with the page
+     sliding through it. Offsetting by that padding makes it settle
+     flush against the header, while sitting normally when at rest. */
+  .statTop{
+    position:sticky;top:-20px;z-index:5;background:var(--bg);
+    margin:-20px -18px 0;padding:20px 18px 20px;
+  }
+  /* Both controls share one row and shrink to fit rather than wrapping:
+     each group takes a share of the width, each button an equal share of
+     its group, and the type scales a little on narrow screens. Capped so
+     they do not sprawl on a wide one. */
+  /* One row that shrinks rather than wraps. The toggle keeps the compact
+     rounded shape of the filter pill beside it. */
+  .statHead{display:flex;align-items:center;gap:8px;max-width:520px;margin:0 auto;}
+  .statHead .chips{flex:1 1 auto;min-width:0;flex-wrap:nowrap;gap:5px;}
+  .statHead .chip{
+    flex:1 1 0;min-width:0;padding:7px 3px;text-align:center;
+    white-space:nowrap;letter-spacing:.06em;border-radius:20px;
+    font-size:clamp(10px, 2.7vw, 12px);
+  }
+  .seg{
+    display:flex;flex:0 1 auto;min-width:0;
+    border:1px solid var(--line);border-radius:20px;overflow:hidden;
+  }
+  .seg button{
+    flex:0 1 auto;min-width:0;white-space:nowrap;
+    font-family:var(--display);text-transform:uppercase;letter-spacing:.06em;
+    font-size:clamp(10px, 2.7vw, 12px);font-weight:600;padding:7px 9px;
+    color:var(--text-dim);
+  }
+  .seg button[aria-pressed="true"]{background:var(--accent);color:var(--on-accent);}
   .nothing{color:var(--text-dim);font-size:13px;padding:16px 0;border-bottom:1px solid var(--line);}
 
   .addbtn{width:100%;margin-top:24px;padding:16px;border:1px dashed var(--line);border-radius:2px;text-align:center;color:var(--text-dim);font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;font-size:13px;font-weight:600;}
@@ -218,7 +250,11 @@
   body.dim .med .eyebrow,body.dim .med .note{opacity:.2;}
   body.dim.peek .med .big{opacity:1;}
   body.dim.peek .med .eyebrow,body.dim.peek .med .note{opacity:1;}
-  .navrow{display:flex;align-items:center;justify-content:space-between;margin:2px 0 18px;}
+  .navrow{display:flex;align-items:center;justify-content:space-between;margin:0;}
+  /* inside the sticky block the spacing is set there, so the row itself
+     carries none — it used to hold 18px below and 2px above, which is
+     the wrong way round once it sits under the toggles */
+  #statNav{margin-top:20px;}
   .navrow button{width:42px;height:38px;border:1px solid var(--line);border-radius:2px;color:var(--text-dim);font-size:16px;text-align:center;}
   .navrow span{font-family:var(--display);text-transform:uppercase;letter-spacing:.16em;font-size:14px;font-weight:600;}
   /* The filter rides on the section heading rather than taking a full
@@ -314,19 +350,22 @@
   <section class="screen" id="s-log"><div class="scroll" id="logBody"></div></section>
 
   <section class="screen" id="s-stats"><div class="scroll">
-    <div class="statHead">
-      <div class="chips" id="statTabs">
-        <button class="chip" data-v="days" aria-pressed="true">Days</button>
-        <button class="chip" data-v="weeks" aria-pressed="false">Weeks</button>
-        <button class="chip" data-v="months" aria-pressed="false">Months</button>
+    <div class="statTop">
+      <div class="statHead">
+        <div class="chips" id="statTabs">
+          <button class="chip" data-v="days" aria-pressed="true">Days</button>
+          <button class="chip" data-v="weeks" aria-pressed="false">Weeks</button>
+          <button class="chip" data-v="months" aria-pressed="false">Months</button>
+        </div>
+        <div class="seg" id="statMeas">
+          <button data-m="count" aria-pressed="true">Sessions</button>
+          <button data-m="time" aria-pressed="false">Time</button>
+        </div>
       </div>
-      <div class="chips" id="statMeas">
-        <button class="chip" data-m="count" aria-pressed="true">Sessions</button>
-        <button class="chip" data-m="time" aria-pressed="false">Time</button>
-      </div>
+      <div id="statNav"></div>
     </div>
 
-    <div id="statBody" style="margin-top:20px"></div>
+    <div id="statBody"></div>
     <button class="ghost danger" id="clearlog">Clear all history</button>
   </div></section>
 
@@ -707,7 +746,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '12.0';
+const APP_VERSION = '12.5';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -2839,7 +2878,7 @@ const isUpkeep = s => typeOf(s.type).category === 'upkeep';
 /* Two independent lenses. Exercises filter by type, because all Muay
    Thai belongs together. Upkeep filters by the individual task, because
    every task shares one type and each is its own habit. */
-const ofType = list => statType === 'all'
+const ofType = list => (statType === 'all' || statType === 'cat:both')
   ? list.filter(s=>!isUpkeep(s))
   : statType.startsWith('cat:')
     ? list.filter(s=>!isUpkeep(s) && s.category === statType.slice(4))
@@ -2852,25 +2891,33 @@ const ofTask = list => statTask === 'all'
 /* Counting sessions says you turned up; counting minutes says how much
    of the session you actually did. A round you cut short at ten minutes
    still counts as one, so the two measures disagree in a useful way. */
-function chartHTML(w, pick){
-  const order = t => (typeOf(t).category === 'mental' ? 0 : 1);   // mind stacks on top
+function chartHTML(w, pick, groupBy){
+  /* bars normally split by activity; 'category' splits them by side so
+     Body and Mind can be read against each other */
+  const byCat = groupBy === 'category';
+  const keyOf = x => byCat ? (x.category || typeOf(x.type).category) : x.type;
+  const tint  = k => byCat
+    ? ((CATS.find(c=>c.id === k) || {}).color || 'var(--text-dim)')
+    : typeOf(k).accent;
+  const order = k => byCat ? (k === 'mental' ? 0 : 1)
+                           : (typeOf(k).category === 'mental' ? 0 : 1);
   const byTime = statMeasure === 'time';
   const amount = x => byTime ? Math.max(0, x.dur || 0) / 60 : 1;
   const cols = w.buckets.map(b=>{
     const inB = pick(sessionsIn(b.from, b.to));
     const byType = {};
-    inB.forEach(x=>{ byType[x.type] = (byType[x.type] || 0) + amount(x); });
+    inB.forEach(x=>{ const k = keyOf(x); byType[k] = (byType[k] || 0) + amount(x); });
     const total = inB.reduce((n,x)=>n + amount(x), 0);
     return {count: total, label: b.label, byType,
             cap: byTime ? (total >= 60 ? (total/60).toFixed(total >= 600 ? 0 : 1)+'h'
-                                       : (total ? Math.round(total)+'' : ''))
+                                       : (total ? Math.round(total)+'m' : ''))
                         : (total || '')};
   });
   const peak = Math.max(byTime ? 30 : 3, ...cols.map(c=>c.count));
   const bars = cols.map(c=>{
     const segs = Object.keys(c.byType)
       .sort((x,y)=>order(x)-order(y) || x.localeCompare(y))
-      .map(t=>`<i style="height:${(c.byType[t]/peak)*100}%;background:${typeOf(t).accent}"></i>`).join('');
+      .map(t=>`<i style="height:${(c.byType[t]/peak)*100}%;background:${tint(t)}"></i>`).join('');
     return `<div><b>${c.cap}</b>${segs || '<i class="none" style="height:1%"></i>'}</div>`;
   }).join('');
   return `<div class="bars">${bars}</div>
@@ -2898,7 +2945,10 @@ function exerciseSection(w){
   const cats = BALANCE_CATS
     .filter(c=>sessions.some(s=>!isUpkeep(s) && s.category === c.id))
     .map(c=>['cat:'+c.id, c.name]);
-  const opts = [['all','All activities']].concat(cats).concat(kinds.map(k=>[k, typeOf(k).name]));
+  /* the same sessions as All, but the bars split by side rather than by
+     activity, so the two can be read against each other */
+  const both = cats.length > 1 ? [['cat:both','Body & Mind']] : [];
+  const opts = [['all','All activities']].concat(both).concat(cats).concat(kinds.map(k=>[k, typeOf(k).name]));
   if(!opts.some(o=>o[0] === statType)) statType = 'all';
   const order = t => (typeOf(t).category === 'mental' ? 0 : 1);
   const shown = [...new Set(list.map(s=>s.type))].sort((x,y)=>order(x)-order(y) || x.localeCompare(y));
@@ -2908,10 +2958,14 @@ function exerciseSection(w){
     + totalsBlock(list, statType === 'all' ? 'training' : statType)
     + (statType === 'all' || statType.startsWith('cat:') ? typeBreakdown(list) : '')
     + (ad && ad.plan ? `<p class="adh">Planned sessions — <b>${ad.hit} of ${ad.plan}</b></p>` : '')
-    + chartHTML(w, ofType)
-    + `<div class="key">${shown.map(t=>
+    + chartHTML(w, ofType, statType === 'cat:both' ? 'category' : 'type')
+    + (statType === 'cat:both'
+        ? `<div class="key">${BALANCE_CATS.map(c=>
+            `<span><i style="background:${c.color}"></i>${esc(c.name)}</span>`).join('')}<span>${esc(w.foot)}</span></div>`
+        : '')
+    + (statType === 'cat:both' ? '' : `<div class="key">${shown.map(t=>
         `<span><i style="background:${typeOf(t).accent}"></i>${esc(typeOf(t).name)}</span>`).join('')
-        }<span>${esc(w.foot)}</span></div>`
+        }<span>${esc(w.foot)}</span></div>`)
     + sessionRows(list);
 }
 
@@ -2950,7 +3004,9 @@ function upkeepSection(w){
 function renderStats(){
   const body = el('statBody'); if(!body) return;
   const w = statWindow();
-  body.innerHTML = navRow(w.title) + exerciseSection(w) + upkeepSection(w);
+  const nav = el('statNav');
+  if(nav) nav.innerHTML = navRow(w.title);
+  body.innerHTML = exerciseSection(w) + upkeepSection(w);
 
   const back = el('statBack'), fwd = el('statFwd');
   if(back) back.onclick = ()=>{ statOffset--; renderStats(); };
@@ -2978,7 +3034,7 @@ el('statTabs').addEventListener('click', e=>{
   statView = b.dataset.v; statOffset = 0; renderStats();
 });
 el('statMeas').addEventListener('click', e=>{
-  const b = e.target.closest('.chip'); if(!b) return;
+  const b = e.target.closest('button'); if(!b) return;
   setChips('statMeas', x=>x === b);
   statMeasure = b.dataset.m; renderStats();
 });
