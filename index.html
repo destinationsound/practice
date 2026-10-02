@@ -23,15 +23,34 @@
     --line:#E2E1DD;        /* hairlines and borders */
     --text:#1A1A1D;        /* primary type */
     --text-dim:#6E6E76;    /* secondary type, labels */
-    --brand:#FFC40C;       /* app fill, used where no type applies */
+    /* ── palette ──────────────────────────────────────────────
+     Three rules hold this together:
+       the brand yellow belongs to the app and to nothing else;
+       a category colour is never also an activity colour;
+       activities sit in their category's family — warm and bright
+       for the body, cool and quiet for the mind.
+     Every colour below is a token. Nothing sets a colour any other
+     way, so a change here reaches the whole app. */
+  --brand:#FFC40C;       --on-brand:#1A1A1D;
+  --physical:#B3271E;    --on-physical:#FFFFFF;    /* Body  */
+  --mental:#2E5FA3;      --on-mental:#FFFFFF;      /* Mind  */
+  --upkeep:#6E6E78;      --on-upkeep:#FFFFFF;
+
+  --t-muaythai:#EE5A26;  --on-t-muaythai:#1A1A1D;
+  --t-strength:#CF3A6B;  --on-t-strength:#FFFFFF;
+  --t-run:#E8962B;       --on-t-run:#1A1A1D;
+  --t-meditate:#12BFA6;  --on-t-meditate:#1A1A1D;
+  --t-journal:#6C5CE7;   --on-t-journal:#FFFFFF;
+  --t-cbt:#49A9E0;       --on-t-cbt:#1A1A1D;
+  --t-task:#A3A3AE;      --on-t-task:#1A1A1D;
+
+  /* block kinds inside a circuit — a separate axis from activities */
+  --k-timed:#5B8C85;     --k-guided:#C77D3A;      --k-counted:#7A6FA8;       /* app fill, used where no type applies */
     --accent:#FFC40C;      /* current exercise type, set at runtime */
     --on-accent:#1A1A1D;   /* type ON an accent fill — accents are
                               never used for text, only for fills */
     --danger:#AE3C2C;
-    --physical:#FFC40C;
-    --upkeep:#6E6E78;
-    --mental:#12BFA6;
-    --display:'Avenir Next Condensed','HelveticaNeue-CondensedBold','Arial Narrow',system-ui,sans-serif;
+          --display:'Avenir Next Condensed','HelveticaNeue-CondensedBold','Arial Narrow',system-ui,sans-serif;
     --body:-apple-system,BlinkMacSystemFont,system-ui,'Segoe UI',sans-serif;
     --mono:ui-monospace,'SF Mono',Menlo,monospace;
   }
@@ -43,14 +62,21 @@
     --line:#54262A;
     --text:#F5EDE2;
     --text-dim:#9C7C74;
-    --brand:#C9A227;
-    --accent:#C9A227;
-    --on-accent:#231014;
-    --danger:#E8503A;
-    --physical:#C9A227;
-    --upkeep:#6E6E78;
-    --mental:#79A9A0;
-  }
+    --brand:#E8B41F;       --on-brand:#1A1A1D;
+  --physical:#D4584A;    --on-physical:#1A1A1D;
+  --mental:#6E9BD4;      --on-mental:#1A1A1D;
+  --upkeep:#8A8A95;      --on-upkeep:#1A1A1D;
+
+  --t-muaythai:#F08A52;  --on-t-muaythai:#1A1A1D;
+  --t-strength:#E8707F;  --on-t-strength:#1A1A1D;
+  --t-run:#E3A94F;       --on-t-run:#1A1A1D;
+  --t-meditate:#59C9B6;  --on-t-meditate:#1A1A1D;
+  --t-journal:#9490DC;   --on-t-journal:#1A1A1D;
+  --t-cbt:#7CC4E8;       --on-t-cbt:#1A1A1D;
+  --t-task:#9A9AA4;      --on-t-task:#1A1A1D;
+  --k-timed:#7FA8A1;     --k-guided:#D49A63;      --k-counted:#9A8FC4;
+        --danger:#E8503A;
+        }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html,body{height:100%;margin:0;overscroll-behavior:none;}
   body{
@@ -746,7 +772,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '12.5';
+const APP_VERSION = '12.6';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -806,7 +832,7 @@ const MT_DEFAULTS = {
 };
 const TYPES = {
   muaythai:{
-    name:'Muay Thai', category:'physical', accent:'#FFC40C', ink:'#1A1A1D', accentDark:'#C9A227', inkDark:'#231014',
+    name:'Muay Thai', category:'physical', accent:'var(--t-muaythai)', ink:'var(--on-t-muaythai)',
     ready:true, kind:'timed', blurb:'Spoken combo callouts on a round timer',
     line:s=>{
       const d = s.detail || s;
@@ -928,10 +954,10 @@ const TYPES = {
     },
 
   },
-  run:{      name:'Running',        category:'physical', accent:'#FF7A2F', ink:'#1A1A1D', accentDark:'#E08145', inkDark:'#2A1408', kind:'timed',  blurb:'Distance, pace and splits'},
-  strength:{ name:'Strength',       category:'physical', accent:'#FF5A4D', ink:'#1A1A1D', accentDark:'#E07A6A', inkDark:'#2A100C', kind:'logged', blurb:'Sets, reps, push pull legs'},
+  run:{      name:'Running',        category:'physical', accent:'var(--t-run)', ink:'var(--on-t-run)', kind:'timed',  blurb:'Distance, pace and splits'},
+  strength:{ name:'Strength',       category:'physical', accent:'var(--t-strength)', ink:'var(--on-t-strength)', kind:'logged', blurb:'Sets, reps, push pull legs'},
   meditate:{
-    name:'Meditation', category:'mental', accent:'#12BFA6', ink:'#1A1A1D', accentDark:'#79A9A0', inkDark:'#0F1E1C',
+    name:'Meditation', category:'mental', accent:'var(--t-meditate)', ink:'var(--on-t-meditate)',
     ready:true, kind:'timed', blurb:'Timer, intervals and bowl',
     line:s=>(s.detail && s.detail.completed) ? 'Sat the full length' : 'Ended early',
     defaults:()=>({length:15, taps:5, spacing:2.2, interval:0, volume:.6, dim:true}),
@@ -968,9 +994,9 @@ const TYPES = {
     ],
 
   },
-  journal:{  name:'Journaling',     category:'mental',   accent:'#6C5CE7', ink:'#FFFFFF', accentDark:'#9490DC', inkDark:'#14122A', kind:'written',blurb:'Daily writing'},
+  journal:{  name:'Journaling',     category:'mental',   accent:'var(--t-journal)', ink:'var(--on-t-journal)', kind:'written',blurb:'Daily writing'},
   task:{
-    name:'Task', category:'upkeep', accent:'#6E6E78', ink:'#FFFFFF',
+    name:'Task', category:'upkeep', accent:'var(--t-task)', ink:'var(--on-t-task)',
     ready:true, kind:'checkoff',
     blurb:'Something you keep up — check it off when done',
     defaults:()=>({timed:false}),
@@ -992,7 +1018,7 @@ const TYPES = {
     line:()=>'',
     logPastLabel:'Log a past one',
   },
-  cbt:{      name:'Thought record', category:'mental',   accent:'#2E9BF0', ink:'#1A1A1D', accentDark:'#7CACD4', inkDark:'#0D1928', kind:'written',blurb:'CBT worksheets'},
+  cbt:{      name:'Thought record', category:'mental',   accent:'var(--t-cbt)', ink:'var(--on-t-cbt)', kind:'written',blurb:'CBT worksheets'},
 };
 const typeOf = id => TYPES[id] || TYPES.muaythai;
 const summaryOf = ex => ex.logOnly ? 'Logged by hand'
@@ -4853,9 +4879,9 @@ BACKTO.combo    = ()=> blkCfg ? openBlock(blkCfg, blkIndex) : backToEditor();
 
 /* ── shared look-ups the editor needs ───────────────────────── */
 const KINDS = {
-  timed:   {name:'Timed',    accent:'#12BFA6', blurb:'Runs for a set time — rope, shadow boxing, a rest'},
-  guided:  {name:'Bag work', accent:'#FFC40C', blurb:'Calls combos aloud, random or a script you write'},
-  counted: {name:'Counted',  accent:'#6C5CE7', blurb:'Shows a target and waits for you to tap done'},
+  timed:   {name:'Timed',    accent:'var(--k-timed)', blurb:'Runs for a set time — rope, shadow boxing, a rest'},
+  guided:  {name:'Bag work', accent:'var(--k-guided)', blurb:'Calls combos aloud, random or a script you write'},
+  counted: {name:'Counted',  accent:'var(--k-counted)', blurb:'Shows a target and waits for you to tap done'},
 };
 window.blockAccent  = b => (KINDS[b.kind] || KINDS.timed).accent;
 window.blockSummary = b => b.kind === 'counted'
