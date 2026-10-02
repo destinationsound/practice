@@ -151,6 +151,7 @@
   .subgrp .ct{font-family:var(--mono);font-size:12px;color:var(--text-dim);}
   .subgrp .chev{width:16px;text-align:center;color:var(--text-dim);font-size:14px;}
   .subgrp.folded{padding-bottom:14px;border-bottom:1px solid var(--line);}
+  .statHead{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
   .nothing{color:var(--text-dim);font-size:13px;padding:16px 0;border-bottom:1px solid var(--line);}
 
   .addbtn{width:100%;margin-top:24px;padding:16px;border:1px dashed var(--line);border-radius:2px;text-align:center;color:var(--text-dim);font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;font-size:13px;font-weight:600;}
@@ -313,10 +314,16 @@
   <section class="screen" id="s-log"><div class="scroll" id="logBody"></div></section>
 
   <section class="screen" id="s-stats"><div class="scroll">
-    <div class="chips" id="statTabs">
-      <button class="chip" data-v="days" aria-pressed="true">Days</button>
-      <button class="chip" data-v="weeks" aria-pressed="false">Weeks</button>
-      <button class="chip" data-v="months" aria-pressed="false">Months</button>
+    <div class="statHead">
+      <div class="chips" id="statTabs">
+        <button class="chip" data-v="days" aria-pressed="true">Days</button>
+        <button class="chip" data-v="weeks" aria-pressed="false">Weeks</button>
+        <button class="chip" data-v="months" aria-pressed="false">Months</button>
+      </div>
+      <div class="chips" id="statMeas">
+        <button class="chip" data-m="count" aria-pressed="true">Sessions</button>
+        <button class="chip" data-m="time" aria-pressed="false">Time</button>
+      </div>
     </div>
 
     <div id="statBody" style="margin-top:20px"></div>
@@ -700,7 +707,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '11.8';
+const APP_VERSION = '12.0';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -2662,6 +2669,7 @@ document.addEventListener('visibilitychange', async ()=>{
 });
 
 /* ══ stats ═════════════════════════════════════════════════════ */
+let statMeasure = 'count';
 let statView = 'days', statOffset = 0, statType = 'all', statTask = 'all';
 
 /* Consistency is the spine: whether it happened, and whether it kept
@@ -2841,20 +2849,29 @@ const ofTask = list => statTask === 'all'
   : list.filter(s=>s.exerciseId === statTask);
 
 /* One chart, drawn twice — once for training, once for upkeep. */
+/* Counting sessions says you turned up; counting minutes says how much
+   of the session you actually did. A round you cut short at ten minutes
+   still counts as one, so the two measures disagree in a useful way. */
 function chartHTML(w, pick){
   const order = t => (typeOf(t).category === 'mental' ? 0 : 1);   // mind stacks on top
+  const byTime = statMeasure === 'time';
+  const amount = x => byTime ? Math.max(0, x.dur || 0) / 60 : 1;
   const cols = w.buckets.map(b=>{
     const inB = pick(sessionsIn(b.from, b.to));
     const byType = {};
-    inB.forEach(x=>{ byType[x.type] = (byType[x.type] || 0) + 1; });
-    return {count: inB.length, byType, label: b.label};
+    inB.forEach(x=>{ byType[x.type] = (byType[x.type] || 0) + amount(x); });
+    const total = inB.reduce((n,x)=>n + amount(x), 0);
+    return {count: total, label: b.label, byType,
+            cap: byTime ? (total >= 60 ? (total/60).toFixed(total >= 600 ? 0 : 1)+'h'
+                                       : (total ? Math.round(total)+'' : ''))
+                        : (total || '')};
   });
-  const peak = Math.max(3, ...cols.map(c=>c.count));
+  const peak = Math.max(byTime ? 30 : 3, ...cols.map(c=>c.count));
   const bars = cols.map(c=>{
     const segs = Object.keys(c.byType)
       .sort((x,y)=>order(x)-order(y) || x.localeCompare(y))
       .map(t=>`<i style="height:${(c.byType[t]/peak)*100}%;background:${typeOf(t).accent}"></i>`).join('');
-    return `<div><b>${c.count || ''}</b>${segs || '<i class="none" style="height:1%"></i>'}</div>`;
+    return `<div><b>${c.cap}</b>${segs || '<i class="none" style="height:1%"></i>'}</div>`;
   }).join('');
   return `<div class="bars">${bars}</div>
     <div class="axis">${cols.map(c=>`<span>${esc(c.label)}</span>`).join('')}</div>`;
@@ -2959,6 +2976,11 @@ el('statTabs').addEventListener('click', e=>{
   const b = e.target.closest('.chip'); if(!b) return;
   setChips('statTabs', x=>x === b);
   statView = b.dataset.v; statOffset = 0; renderStats();
+});
+el('statMeas').addEventListener('click', e=>{
+  const b = e.target.closest('.chip'); if(!b) return;
+  setChips('statMeas', x=>x === b);
+  statMeasure = b.dataset.m; renderStats();
 });
 el('clearlog').addEventListener('click', e=>{
   const btn = e.currentTarget;
@@ -3945,10 +3967,16 @@ function openLift(backdate, when){
         return {
           movementId: it.movementId, name: m.name,
           rest: it.rest || c.rest,
-          sets: [...Array(it.sets)].map((_,i)=>{
-            const p = prior && (prior.sets[i] || prior.sets[prior.sets.length-1]);
-            return {reps:'', load:'', level: (p && p.level) || (m.ladder ? m.ladder[Math.min(m.ladder.length-1, Math.max(0, m.ladder.indexOf('Standard')))] || m.ladder[0] : null), done:false};
-          })
+          /* the rung each set opens on comes from the matching set last
+             time, counted by set number so a drop cannot shift it */
+          sets: (()=>{
+            const cl = prior ? clusters(prior.sets) : [];
+            return [...Array(it.sets)].map((_,i)=>{
+              const g = cl[i] || cl[cl.length-1];
+              const p = g && g.main;
+              return {reps:'', load:'', level: (p && p.level) || (m.ladder ? m.ladder[Math.min(m.ladder.length-1, Math.max(0, m.ladder.indexOf('Standard')))] || m.ladder[0] : null), done:false};
+            });
+          })()
         };
       })
     };
@@ -4194,8 +4222,16 @@ function applyAutofill(){
     const m = moveOf(it.movementId);
     const prior = priorSets(draft.exerciseId, it.movementId);
     if(!prior) return;
+    /* Matched by set number, not row position — counting raw rows meant
+       a drop in the last session shifted every set after it, so set 3
+       was filled from last time's drop instead of from set 3. */
+    const cl = clusters(prior.sets);
     it.sets.forEach((st,i)=>{
-      const p = prior.sets[i] || prior.sets[prior.sets.length-1];
+      const spot = rowSpot(it.sets, i);
+      const group = cl[spot.c];
+      const p = spot.d > 0
+        ? (group && group.drops[spot.d - 1])
+        : ((group && group.main) || (cl.length && cl[cl.length-1].main));
       if(!p) return;
       if(st.reps === ''){ st.reps = p.reps || ''; st.autoR = true; }
       if(m.measure !== 'level' && st.load === ''){ st.load = fromLb(p.load) || ''; st.autoL = true; }
