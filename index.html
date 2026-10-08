@@ -210,6 +210,19 @@
     color:var(--text-dim);
   }
   .seg button[aria-pressed="true"]{background:var(--accent);color:var(--on-accent);}
+  .iconbtn.arming{
+    width:auto;padding:0 12px;color:var(--danger);border-color:var(--danger);
+    font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;
+    font-size:11px;font-weight:600;
+  }
+  /* filling in a past workout is a form with the app header showing,
+     so its session bar would be a second header */
+  .screen.editing .sessbar{display:none;}
+  .sortBar{display:flex;justify-content:flex-end;margin:18px 0 -4px;}
+  .row.again .name{opacity:.75;}
+  .row.again{padding-left:16px;}
+  .blockNav{display:flex;gap:10px;}
+  .blockNav .ghost{flex:1 1 0;}
   .nothing{color:var(--text-dim);font-size:13px;padding:16px 0;border-bottom:1px solid var(--line);}
 
   .addbtn{width:100%;margin-top:24px;padding:16px;border:1px dashed var(--line);border-radius:2px;text-align:center;color:var(--text-dim);font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;font-size:13px;font-weight:600;}
@@ -472,7 +485,10 @@
       <div class="status"><span id="statusL"></span><b id="statusR"></b></div>
       <button class="primary" id="blockDone" hidden>Done</button>
       <button class="primary" id="go">Start</button>
-      <button class="ghost" id="nextBlock" hidden>Skip to next block</button>
+      <div class="blockNav" id="blockNav" hidden>
+        <button class="ghost" id="prevBlock">‹ Back</button>
+        <button class="ghost" id="nextBlock">Skip ›</button>
+      </div>
       <button class="ghost" id="pauseBtn" hidden>Pause</button>
     </div>
   </section>
@@ -781,7 +797,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '12.7';
+const APP_VERSION = '12.9';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -1035,7 +1051,7 @@ const summaryOf = ex => ex.logOnly ? 'Logged by hand'
 
 /* ══ storage ═══════════════════════════════════════════════════ */
 const K_GLOBAL='practice.global.v1', K_EX='practice.exercises.v1', K_SESSIONS='practice.sessions.v1';
-let G = {rate:.95, pitch:1, callouts:'words', voiceURI:null, units:'lb', audioMode:'ambient', lastExport:null, folded:{}};
+let G = {sort:'recent', rate:.95, pitch:1, callouts:'words', voiceURI:null, units:'lb', audioMode:'ambient', lastExport:null, folded:{}};
 let exercises = [], sessions = [];
 
 /* Anything that escapes a handler lands here, on screen, with the line
@@ -1179,6 +1195,32 @@ function makeScreen(id, opts){
   return secEl;
 }
 
+/* The ✕ on a session screen throws the session away. It asks first,
+   by becoming a labelled button rather than staying a bare icon — a
+   two-tap confirm on an unlabelled ✕ gives you nothing to read. */
+function wireDiscard(id, discard){
+  const btn = el(id); if(!btn) return;
+  let armed = 0, timer = null;
+  const reset = ()=>{
+    armed = 0; clearTimeout(timer);
+    btn.classList.remove('arming'); btn.textContent = '✕';
+    btn.setAttribute('aria-label', 'Discard session');
+  };
+  btn.addEventListener('click', ()=>{
+    if(!armed){
+      armed = 1;
+      btn.classList.add('arming');
+      btn.textContent = 'Discard?';
+      btn.setAttribute('aria-label', 'Tap again to discard');
+      timer = setTimeout(reset, 4000);
+      return;
+    }
+    reset();
+    discard();
+  });
+  return reset;
+}
+
 /* One list row, used by every list in the app. */
 function rowHTML(o){
   return `<button class="row${o.cls ? ' '+o.cls : ''}" ${o.attr || ''}>
@@ -1264,6 +1306,16 @@ function sessionsChanged(){
 }
 const sessionsIn  = (a, b) => sessions.filter(s=>inRange(s, a, b));
 const sessionsFor = id => sessions.filter(s=>s.exerciseId === id).sort((a,b)=>b.start - a.start);
+/* Within a group, creation order is arbitrary and alphabetical buries
+   what you actually use. Recent floats the live ones up and maintains
+   itself; A–Z is there for when you are hunting a name. */
+const lastUsed = id => { const h = sessionsFor(id); return h.length ? h[0].start : 0; };
+function sortEx(list){
+  const by = G.sort === 'az' ? null : 'recent';
+  return list.slice().sort((a,b)=> by
+    ? (lastUsed(b.id) - lastUsed(a.id)) || a.name.localeCompare(b.name)
+    : a.name.localeCompare(b.name));
+}
 function removeSession(s){
   sessions = sessions.filter(x=>x !== s);
   sessionsChanged();
@@ -1573,12 +1625,24 @@ function todayBlock(){
      schedule made a day of unplanned training look like a day of doing
      nothing — the class you could not attend showed unticked and the
      session you replaced it with was nowhere. */
-  const doneIds = [...new Set(sessionsIn(d, z).map(s=>s.exerciseId))];
+  const did = sessionsIn(d, z).slice().sort((a,b)=>a.start - b.start);
+  const doneIds = [...new Set(did.map(s=>s.exerciseId))];
   const extra = doneIds
     .map(id=>exercises.find(e=>e.id === id))
     .filter(e=>e && !plannedFor(d).some(p=>p.id === e.id));
   const planned = plannedFor(d).concat(extra);
   const left = planned.filter(e=>!didOn(e.id, d)).length;
+
+  /* One row per planned exercise, so the plan stays readable — then a
+     row of its own for every session after the first, so a day you
+     trained twice does not report as one. Each row opens its own
+     session rather than guessing which you meant. */
+  const rows = [];
+  planned.forEach(e=>{
+    const mine = did.filter(x=>x.exerciseId === e.id);
+    rows.push({ex:e, session:null});
+    mine.slice(1).forEach(x=>rows.push({ex:e, session:x}));
+  });
   const head = `<div class="dayNav">
       <button class="iconbtn" id="dayBack" ${dayOffset <= DAY_BACK ? 'disabled' : ''} aria-label="Previous day">‹</button>
       <h2 class="grp">${esc(dayTitle())}${planned.length && !left ? ' · all done' : ''}</h2>
@@ -1591,13 +1655,16 @@ function todayBlock(){
         : 'Nothing scheduled yet. Open an exercise, tap Edit, and pick your repeat days.'}</div>`;
   }
   return head
-    + planned.map(e=>{
-        const t = typeOf(e.type), done = didOn(e.id, d);
+    + rows.map(({ex:e, session})=>{
+        const t = typeOf(e.type), done = session ? true : didOn(e.id, d);
         const unplanned = !(e.sched && e.sched.days && e.sched.days.includes(d.getDay()));
         return rowHTML({
-          cls: 'today' + (done?' isdone':''), attr: `data-e="${e.id}"`,
+          cls: 'today' + (done?' isdone':'') + (session?' again':''),
+          attr: session ? `data-sid="${session.start}"` : `data-e="${e.id}"`,
           accent: t.accent, name: e.name,
-          sub: esc(t.name) + (unplanned && done ? ' · not scheduled' : ''),
+          sub: esc(t.name)
+             + (session ? ' · ' + esc(dTime(session.start))
+                        : (unplanned && done ? ' · not scheduled' : '')),
           mark: done ? '✓' : ''
         });
       }).join('');
@@ -1627,12 +1694,12 @@ function renderHome(){
     const list = exercises.filter(e=>e.category === c.id);
     const head = `<h2 class="grp">${esc(c.name)}</h2>`;
     if(!list.length) return head + `<div class="nothing">Nothing here yet.</div>`;
-    if(c.id === 'upkeep') return head + list.map(exerciseRow).join('');
+    if(c.id === 'upkeep') return head + sortEx(list).map(exerciseRow).join('');
 
-    const order = [...new Set(list.map(e=>e.type))];
+    const order = [...new Set(sortEx(list).map(e=>e.type))];
     return head + order.map(type=>{
       const t = typeOf(type), key = c.id + ':' + type;
-      const items = list.filter(e=>e.type === type);
+      const items = sortEx(list.filter(e=>e.type === type));
       const folded = !!G.folded[key];
       return `<button class="subgrp${folded ? ' folded' : ''}" data-fold="${esc(key)}" aria-expanded="${!folded}">
           <span class="tick" style="background:${t.accent}"></span>
@@ -1642,13 +1709,29 @@ function renderHome(){
         </button>` + (folded ? '' : items.map(exerciseRow).join(''));
     }).join('');
   }).join('');
-  el('homeBody').innerHTML = backupNag() + todayBlock() + balanceBlock() + sections
+  const sortBar = exercises.length > 4
+    ? `<div class="sortBar"><div class="seg" id="exSort">
+         <button data-s="recent" aria-pressed="${G.sort !== 'az'}">Recent</button>
+         <button data-s="az" aria-pressed="${G.sort === 'az'}">A–Z</button>
+       </div></div>`
+    : '';
+  el('homeBody').innerHTML = backupNag() + todayBlock() + balanceBlock() + sortBar + sections
     + `<button class="addbtn" id="newEx">+ Add new</button>`;
 }
 el('homeBody').addEventListener('click', e=>{
   if(e.target.closest('#dayBack')){ if(dayOffset > DAY_BACK){ dayOffset--; renderHome(); } return; }
   if(e.target.closest('#dayFwd')){ if(dayOffset < 1){ dayOffset++; renderHome(); } return; }
   if(e.target.closest('#nagBackup')){ show('settings'); return; }
+  /* an extra session of the day opens that session, not the exercise */
+  const sid = e.target.closest('[data-sid]');
+  if(sid){
+    pushOrigin();
+    const rec = sessions.find(x=>String(x.start) === sid.dataset.sid);
+    if(rec) editSession(rec);
+    return;
+  }
+  const so = e.target.closest('[data-s]');
+  if(so){ G.sort = so.dataset.s; saveGlobal(); renderHome(); return; }
   const fold = e.target.closest('[data-fold]');
   if(fold){
     const k = fold.dataset.fold;
@@ -2373,8 +2456,10 @@ el('medGo').addEventListener('click', ()=>{
   if(running) finishMed(true);
   backToExercise();
 });
-el('medQuit').addEventListener('click', ()=>{
-  if(running) finishMed(true);
+wireDiscard('medQuit', ()=>{
+  if(running){ abandoning = true; try{ finishMed(true); } finally { abandoning = false; } }
+  live = null;
+  document.body.classList.remove('dim','peek');
   backToExercise();
 });
 
@@ -2578,7 +2663,7 @@ function start(){
   live = {start: Date.now(), mark: workedMs(), rounds:0, combos:0, strikes:0, blocks:[]};
   go().textContent = 'Stop'; go().classList.add('stop');
   const pb = el('pauseBtn'); pb.hidden = false; pb.textContent = 'Pause';
-  el('nextBlock').hidden = S.shape !== 'circuit';
+  el('blockNav').hidden = S.shape !== 'circuit';
   holdScreen();
   loop(tok);
 }
@@ -2588,7 +2673,7 @@ function stop(){
   setPaused(false);
   cancelWaits();
   el('pauseBtn').hidden = true;
-  el('nextBlock').hidden = true;
+  el('blockNav').hidden = true;
   if(window.releaseBlockWait) releaseBlockWait();
   try{ speechSynthesis.cancel(); }catch(e){}
   stopClock();
@@ -2705,9 +2790,13 @@ function startClock(sec){
 }
 function stopClock(){ stopTicker('round'); el('clock').classList.remove('warn'); }
 
+/* Set while discarding, so the one exit that stores a session knows not
+   to. Every type ends through endSession, so this is the only gate. */
+let abandoning = false;
 function endSession(){
   if(!live) return;
   const s = live; live = null;
+  if(abandoning){ lastDiscard = 0; return; }
   const type = cur ? cur.type : 'muaythai';
   commitSession(makeSession(cur, {
     start: s.start,
@@ -2735,8 +2824,10 @@ el('pauseBtn').addEventListener('click', ()=>{
   el('phase').textContent = to ? 'Paused' : (S.useRounds ? `Round ${round} of ${S.rounds}` : 'Working');
   if(to){ try{ speechSynthesis.cancel(); }catch(e){} }
 });
-el('quit').addEventListener('click', ()=>{
-  if(running) stop();
+/* It used to end and SAVE, which is what the Stop button is for. */
+wireDiscard('quit', ()=>{
+  if(running){ abandoning = true; try{ stop(); } finally { abandoning = false; } }
+  live = null;
   backToExercise();
 });
 document.addEventListener('visibilitychange', async ()=>{
@@ -3626,7 +3717,14 @@ css.textContent += `
 document.head.appendChild(css);
 
 /* ── screens ──────────────────────────────────────────────── */
-makeScreen('lift', {session:true, title:'Workout'});
+makeScreen('lift', {session:true, title:'Workout', html:`
+  <div class="sessbar">
+    <span class="eyebrow" id="liftName">Workout</span>
+    <span class="spacer"></span>
+    <button class="iconbtn" id="liftQuit" aria-label="Discard session">✕</button>
+  </div>
+  <div class="scroll" id="liftBody"></div>`});
+
 makeScreen('pick', {title:'Add movement'});
 /* the movement library travels with a backup */
 EXPORTERS.movements = {
@@ -4291,22 +4389,26 @@ el('liftBody').addEventListener('click', e=>{
     const isEdit = !!(draft && draft.editing);
     return confirmTap(cancel,
       isEdit ? 'Tap again to delete' : 'Tap again to discard',
-      isEdit ? 'Delete workout' : 'Discard', ()=>{
-        stopRest(); stopElapsed(); resetPause();
-        const wasEdit = !!(draft && draft.editing && editingLift);
-        const wasForm = !!(draft && (draft.editing || draft.backdate));
-        if(wasEdit){
-          removeSession(editingLift);
-          editingLift = null;
-        } else {
-          write(draft && draft.backdate ? K_PAST : K_DRAFT, null);
-        }
-        draft = null;
-        if(wasForm) return endEdit('lift');   // put the session chrome back
-        backToExercise();
-      });
+      isEdit ? 'Delete workout' : 'Discard', discardLift);
   }
 });
+
+/* The ✕ in the header and the button at the foot do the same thing. */
+function discardLift(){
+  stopRest(); stopElapsed(); resetPause();
+  const wasEdit = !!(draft && draft.editing && editingLift);
+  const wasForm = !!(draft && (draft.editing || draft.backdate));
+  if(wasEdit){
+    removeSession(editingLift);
+    editingLift = null;
+  } else {
+    write(draft && draft.backdate ? K_PAST : K_DRAFT, null);
+  }
+  draft = null;
+  if(wasForm) return endEdit('lift');
+  backToExercise();
+}
+wireDiscard('liftQuit', discardLift);
 
 /* Each filled field is marked as the app's rather than yours, so turning
    autofill off clears exactly what it put there and leaves anything you
@@ -4768,13 +4870,16 @@ el('writeDel').addEventListener('click', ()=>
     endEdit('write');
   }));
 
-el('writeQuit').addEventListener('click', ()=>{
-  /* An unfinished new entry stays in the draft, so leaving never
-     loses writing. An edit simply reverts. */
+/* Standardised with every other session: the ✕ discards, after asking.
+   An edit simply reverts; a new entry's draft is cleared. */
+wireDiscard('writeQuit', ()=>{
   stopWriteTimer(); stopTicker('writeClock');
   const wasEdit = !!editingEntry;
   editingEntry = null;
   if(wasEdit) return endEdit('write');
+  write(K_DRAFT, null);
+  resetWriting(0);
+  const box = el('writeText'); if(box) box.value = '';
   backToExercise();
 });
 
@@ -5230,10 +5335,15 @@ async function callBlockCombo(tok, b, n){
 
 el('blockDone').addEventListener('click', ()=>{ if(blockDoneResolve) blockDoneResolve(); });
 
-/* Skip forward one block. */
+/* Step either way through the running order — a skip is easy to
+   overshoot, and there was no way back from one. */
 el('nextBlock').addEventListener('click', ()=>{
   if(curBlock < 0) return;
   requestJump(curBlock + 1);
+});
+el('prevBlock').addEventListener('click', ()=>{
+  if(curBlock <= 0) return;
+  requestJump(curBlock - 1);
 });
 
 /* Pausing a circuit turns the otherwise-empty stage into the running
