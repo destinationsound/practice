@@ -357,6 +357,12 @@
   .axis span{flex:1;text-align:center;font-family:var(--display);font-size:11px;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;}
   .key{display:flex;gap:16px;margin-bottom:24px;font-size:12px;color:var(--text-dim);}
   .key i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;}
+  /* the heading over a peeked list — label, how many there are, and the
+     way through to all of them */
+  .listHead{width:100%;display:flex;align-items:baseline;gap:9px;padding:22px 0 6px;text-align:left;}
+  .listHead .lb{font-family:var(--display);text-transform:uppercase;letter-spacing:.2em;font-size:12px;color:var(--text-dim);font-weight:600;}
+  .listHead .ct{font-family:var(--mono);font-size:12px;color:var(--text-dim);}
+  .listHead .go{margin-left:auto;color:var(--text-dim);font-size:19px;}
   .sess{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid var(--line);}
   .sess .when{font-size:14px;}
   .sess .when small{display:block;color:var(--text-dim);font-size:12px;margin-top:3px;}
@@ -811,7 +817,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '14.0';
+const APP_VERSION = '14.1';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -1760,7 +1766,16 @@ el('back').addEventListener('click', ()=>{
   if(screen === 'preset'){ resetAccent(); renderTypes(); return show('newtype'); }
   if(screen === 'exercise') return popOrigin();
   if(screen === 'newtype'){ resetAccent(); renderHome(); return show('home'); }
-  resetAccent(); show('home');
+  resetAccent();
+  /* Anything else returns to whatever it covered. Falling through to the
+     home screen instead meant Back threw away the trail from any screen
+     nobody had thought to name here — the reading screen went home from
+     the middle of Stats, and so did every module screen added later.
+     A session screen is the one exception: it is left, not navigated
+     back from, so it still drops you home. */
+  const sec = el('s-' + screen);
+  if(sec && sec.classList.contains('sessionScreen')) return show('home');
+  popOrigin();
 });
 el('nav').addEventListener('click', e=>{
   const b = e.target.closest('button'); if(!b || running) return;
@@ -3335,7 +3350,7 @@ function exerciseSection(w){
     + (statType === 'cat:both' ? '' : `<div class="key">${shown.map(t=>
         `<span><i style="background:${typeOf(t).accent}"></i>${esc(typeOf(t).name)}</span>`).join('')
         }<span>${esc(w.foot)}</span></div>`)
-    + sessionRows(list);
+    + listBlock('ex', 'Sessions', list);
 }
 
 /* A measurement is not additive — you cannot add Monday's 172 to
@@ -3396,6 +3411,87 @@ function lineChartHTML(w, list, step){
       w.buckets.map(b=>`<span>${esc(b.label)}</span>`).join('')}</div>`;
 }
 
+/* ══ the log, and the screen it lives on ══════════════════════
+   A stats page answers "how much"; the list of every session answers
+   "which ones". Stacked, the second buries everything under it — seven
+   months of training is thirty screens of rows, with the whole upkeep
+   section stranded below. So the summary shows the most recent few and
+   hands the rest to a screen of its own. */
+const LIST_PEEK = 5;
+makeScreen('sessions', {title:'Sessions'});
+BACKTO.sessions = ()=>popOrigin();
+TAB_OF.sessions = 'stats';
+/* editing a row off this screen should come back to it, not to the
+   summary the screen was opened from */
+ORIGIN_KEY.sessions = ()=>histWhich;
+ORIGIN_OPEN.sessions = k => { histWhich = k; renderSessionList(); show('sessions'); };
+
+/* `render` draws the rows; measurements draw their own, since a reading
+   is a number rather than a duration. */
+function listBlock(which, label, list, render){
+  const draw = render || sessionRows;
+  if(!list.length) return render ? '' : sessionRows(list);
+  const more = list.length > LIST_PEEK;
+  return `<${more ? 'button' : 'div'} class="listHead"${more ? ` data-more="${which}"` : ''}>
+      <span class="lb">${esc(label)}</span>
+      <span class="ct">${list.length}</span>
+      ${more ? '<span class="go">›</span>' : ''}
+    </${more ? 'button' : 'div'}>`
+    + draw(list.slice(0, LIST_PEEK));
+}
+
+/* Rebuilt from the live window and filters rather than from a saved
+   copy, so it can never drift from the page it was opened out of. */
+let histWhich = null;
+function sessionListParts(){
+  const w = statWindow();
+  if(histWhich === 'upkeep'){
+    const list = ofTask(sessionsIn(w.from, w.to));
+    const picked = statTask === 'all' ? null : exercises.find(e=>e.id === statTask);
+    const name = picked ? picked.name : 'All upkeep tasks';
+    if(picked && isMetric(picked)){
+      const step = (picked.cfg && +picked.cfg.step) || 0.2;
+      return {title:'Readings', sub:`${name} · ${w.title}`,
+              html:readingRows(list.filter(s=>valueOf(s) !== null)
+                     .sort((a,b)=>b.start - a.start), picked, step)};
+    }
+    return {title:'Checks', sub:`${name} · ${w.title}`, html:sessionRows(list)};
+  }
+  const list = ofType(sessionsIn(w.from, w.to));
+  const opt = statType === 'all' ? 'All activities'
+            : statType === 'cat:both' ? 'Body & Mind'
+            : statType.startsWith('cat:') ? catOf(statType.slice(4)).name
+            : typeOf(statType).name;
+  return {title:'Sessions', sub:`${opt} · ${w.title}`, html:sessionRows(list)};
+}
+function renderSessionList(){
+  const p = sessionListParts();
+  TITLES.sessions = p.title;
+  el('sessionsBody').innerHTML = `<p class="eyebrow">${esc(p.sub)}</p>` + p.html;
+}
+function openSessionList(which){
+  histWhich = which;
+  pushOrigin();
+  renderSessionList();
+  show('sessions');
+}
+el('sessionsBody').addEventListener('click', e=>{
+  const b = e.target.closest('[data-sid]'); if(!b) return;
+  const rec = sessions.find(x=>String(x.start) === b.dataset.sid);
+  if(rec) editSession(rec);
+});
+
+const readingRows = (list, ex, step) => {
+  const unit = unitOf(ex);
+  const fmt = v => (step % 1 === 0) ? String(Math.round(v)) : (Math.round(v*10)/10).toFixed(1);
+  return list.map(sv=>`
+    <button class="sess" data-sid="${sv.start}">
+      <div class="when">${esc(dWeek(sv.start))}
+        <small>${esc(dTime(sv.start))}</small></div>
+      <b>${esc(fmt(valueOf(sv)))}${unit ? ' ' + esc(unit) : ''}</b>
+    </button>`).join('');
+};
+
 function upkeepSection(w){
   const tasks = exercises.filter(e=>typeOf(e.type).category === 'upkeep')
                          .sort((a,b)=>a.name.localeCompare(b.name));
@@ -3418,7 +3514,7 @@ function upkeepSection(w){
             ? `${latest}${unitOf(e) ? ' ' + unitOf(e) : ''} · ${n} in this window`
             : `${n} in this window${st ? ` · ${st} day streak` : ''}`, go:'›'});
       }).join('')
-    : sessionRows(list);
+    : listBlock('upkeep', 'Checks', list);
 
   /* A measurement answers a different question from a habit — not how
      often, but where it is now and which way it is going. */
@@ -3444,14 +3540,8 @@ function upkeepSection(w){
       /* not "Sessions per week" — nothing on this chart is a count */
       + `<div class="key"><span>${esc('Average per ' +
           (statView === 'days' ? 'day' : statView === 'weeks' ? 'week' : 'month'))}</span></div>`
-      + (inW.length
-          ? inW.slice().reverse().map(sv=>`
-              <button class="sess" data-sid="${sv.start}">
-                <div class="when">${esc(dWeek(sv.start))}
-                  <small>${esc(dTime(sv.start))}</small></div>
-                <b>${esc(num(valueOf(sv)))}${unit ? ' ' + esc(unit) : ''}</b>
-              </button>`).join('')
-          : '');
+      + listBlock('upkeep', 'Readings', inW.slice().reverse(),
+          l=>readingRows(l, picked, step));
   }
 
   return `<div style="height:20px"></div>` + sectionRow('Upkeep', 'statTask', opts, statTask)
@@ -3482,6 +3572,8 @@ function renderStats(){
 }
 
 el('statBody').addEventListener('click', e=>{
+  const m = e.target.closest('[data-more]');
+  if(m) return openSessionList(m.dataset.more);
   const u = e.target.closest('[data-upk]');
   if(u){ statTask = u.dataset.upk; return renderStats(); }
   const b = e.target.closest('[data-sid]'); if(!b) return;
