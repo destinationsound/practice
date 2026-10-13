@@ -43,6 +43,9 @@
   --t-journal:#6C5CE7;   --on-t-journal:#FFFFFF;
   --t-cbt:#49A9E0;       --on-t-cbt:#1A1A1D;
   --t-task:#A3A3AE;      --on-t-task:#1A1A1D;
+  /* Meals are not an activity and not a category, so they take a hue
+     of their own — green, which nothing else in here uses. */
+  --meal:#2F7347;        --on-meal:#FFFFFF;
 
   /* block kinds inside a circuit — a separate axis from activities */
   --k-timed:#5B8C85;     --k-guided:#C77D3A;      --k-counted:#7A6FA8;       /* app fill, used where no type applies */
@@ -74,6 +77,7 @@
   --t-journal:#9490DC;   --on-t-journal:#1A1A1D;
   --t-cbt:#7CC4E8;       --on-t-cbt:#1A1A1D;
   --t-task:#9A9AA4;      --on-t-task:#1A1A1D;
+  --meal:#58A775;        --on-meal:#1A1A1D;
   --k-timed:#7FA8A1;     --k-guided:#D49A63;      --k-counted:#9A8FC4;
         --danger:#E8503A;
         }
@@ -92,6 +96,10 @@
   .top{display:flex;align-items:center;gap:12px;padding:14px 18px 12px;border-bottom:1px solid var(--line);flex:none;}
   .top h1{font-family:var(--display);font-weight:700;text-transform:uppercase;font-size:21px;margin:0;flex:1;}
   .iconbtn{width:38px;height:38px;border:1px solid var(--line);border-radius:2px;display:grid;place-items:center;color:var(--text-dim);font-size:17px;flex:none;}
+  /* Any rule that sets display beats the hidden attribute, so .iconbtn
+     was keeping the Back button on screen on the root tabs where the
+     code had already hidden it. Hidden has to mean hidden. */
+  [hidden]{display:none !important;}
   .iconbtn:active{background:var(--surface);}
 
   main{flex:1;min-height:0;display:flex;flex-direction:column;}
@@ -138,6 +146,12 @@
     display:grid;place-items:center;color:var(--text);font-size:13px;flex:none;
   }
   .row.today.isdone .mark{background:var(--brand);border-color:var(--brand);color:var(--bg);}
+  /* a reading reports a number, so it gets room to be one rather than
+     the 26px circle a tick lives in */
+  .row.today .mark.reading{
+    width:auto;height:auto;border:0;border-radius:0;background:none;
+    font-family:var(--mono);font-size:15px;color:var(--text);white-space:nowrap;
+  }
   .row.today.isdone .name{opacity:.55;}
   .adh{
     font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;
@@ -797,7 +811,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '12.9';
+const APP_VERSION = '14.0';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -1024,23 +1038,57 @@ const TYPES = {
     name:'Task', category:'upkeep', accent:'var(--t-task)', ink:'var(--on-t-task)',
     ready:true, kind:'checkoff',
     blurb:'Something you keep up — check it off when done',
-    defaults:()=>({timed:false}),
+    defaults:()=>({records:'tick', unit:'lbs', step:0.2}),
     fields:[
-      {kind:'chips', key:'timed', label:'Record', type:'boolean',
-       options:[[false,'Just done'],[true,'Done and time']]},
-      {kind:'note', text:'Just done logs a single tap. Done and time asks how long it took, which is worth knowing for anything that eats an afternoon.'},
+      {kind:'chips', key:'records', label:'Record',
+       options:[['tick','Just done'],['time','Done and time'],['number','A number']],
+       rerender:true},
+      {kind:'note', when:c=>recordsOf(c) !== 'number',
+       text:'Just done logs a single tap. Done and time asks how long it took, which is worth knowing for anything that eats an afternoon.'},
+      {kind:'chips', key:'unit', label:'Unit', when:c=>recordsOf(c) === 'number',
+       options:[['lbs','lbs'],['kg','kg'],['bpm','bpm'],['hrs','hrs'],['','none']]},
+      {kind:'slider', key:'step', label:'Step', min:.1, max:5, step:.1,
+       when:c=>recordsOf(c) === 'number', fmt:v=>String(Math.round(v*10)/10)},
+      {kind:'note', when:c=>recordsOf(c) === 'number',
+       text:'A number records a measurement rather than a tick — weight, resting heart rate, hours slept. Stats charts it as a trend line instead of counting checks.'},
     ],
-    summary:c=>c.timed ? 'Checked off with time' : 'Checked off',
+    summary:c=>recordsOf(c) === 'number' ? `Records a number${c.unit ? ' · ' + c.unit : ''}`
+            : recordsOf(c) === 'time' ? 'Checked off with time' : 'Checked off',
     facts:(c,done)=>{
       const mine = cur ? sessionsFor(cur.id) : [];
+      const u = c.unit ? ' ' + c.unit : '';
+      /* A measurement gets its own four. "Times done" and a day streak
+         would be scoring you on how often you stepped on the scale,
+         which is not what the number is for. */
+      if(recordsOf(c) === 'number'){
+        const reads = mine.map(valueOf).filter(v=>v !== null);
+        const move = reads.length > 1 ? reads[0] - reads[reads.length-1] : null;
+        return [
+          [reads.length ? reads[0] + u : '—', 'Latest'],
+          [move === null ? '—'
+            : (move > 0 ? '+' : move < 0 ? '−' : '') + (Math.round(Math.abs(move)*10)/10), 'All time'],
+          [reads.length, 'Readings'],
+          [mine.length ? dDay(mine[0].start) : '—', 'Last one'],
+        ];
+      }
       return [
         [done, 'Times done'],
-        [currentStreak(cur ? cur.type : 'task'), 'Day streak'],
+        /* this task's streak, not every task's — passing the type made
+           one shared number stand in for all of them */
+        [currentStreak(cur ? 'ex:' + cur.id : 'upkeep'), 'Day streak'],
         [mine.length ? dDay(mine[0].start) : '—', 'Last done'],
-        [c.timed ? hhmm(mine.reduce((n,s)=>n+s.dur,0)) : '—', 'Total time'],
+        [recordsOf(c) === 'time' ? hhmm(mine.reduce((n,s)=>n+s.dur,0)) : '—', 'Total time'],
       ];
     },
-    line:()=>'',
+    line:s=>valueOf(s) !== null
+      ? `${valueOf(s)}${s.detail.unit ? ' ' + s.detail.unit : ''}` : '',
+    /* A reading's whole content is its number, so the generic log form —
+       date, time, note — could not correct the one thing worth
+       correcting. Anything saved has to be editable. */
+    editSession:s=>{
+      const ex = exercises.find(e=>e.id === s.exerciseId);
+      return isMetric(ex) ? openMetric(ex, null, s) : openLog(null, s);
+    },
     logPastLabel:'Log a past one',
   },
   cbt:{      name:'Thought record', category:'mental',   accent:'var(--t-cbt)', ink:'var(--on-t-cbt)', kind:'written',blurb:'CBT worksheets'},
@@ -1183,6 +1231,25 @@ const dMonth = ms => new Date(ms).toLocaleDateString([], {month:'long', year:'nu
 const dTime  = ms => new Date(ms).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
 const dFull  = ms => dLong(ms) + ', ' + dTime(ms);
 
+/* Screens injected by a module can register where Back returns to, and
+   what the header says. Both registries live up here, above the function
+   that writes to them: makeScreen() runs wherever its module happens to
+   sit in the file, and a module above the declaration would otherwise
+   touch a const still in its dead zone and kill the whole script. */
+const BACKTO = {};
+const TITLES = {home:'BETR', stats:'Stats', settings:'Settings', newtype:'Add new', exercise:'Details', editor:'Edit', med:'Meditation', log:'Log a past one', preset:'Choose a plan'};
+/* A module that owns a tab registers how to draw it, so the router
+   never has to know which modules exist. TAB_OF says which tab stays
+   lit on a screen that sits underneath one. */
+const ROOT_RENDER = {};
+const TAB_OF = {};
+/* A screen that shows one particular thing has to say which thing, or
+   Back cannot put it back. ORIGIN_KEY reads that identifier when the
+   screen is covered; ORIGIN_OPEN reopens it. Without a pair here, a
+   module screen can only be returned to as a blank tab. */
+const ORIGIN_KEY = {};
+const ORIGIN_OPEN = {};
+
 /* A module adds a screen the same way every time. */
 function makeScreen(id, opts){
   const o = opts || {};
@@ -1229,7 +1296,7 @@ function rowHTML(o){
       <span class="name"${o.nameStyle ? ` style="${o.nameStyle}"` : ''}>${esc(o.name)}</span>
       ${o.sub ? `<span class="sub">${o.sub}</span>` : ''}
     </span>
-    ${o.mark !== undefined ? `<span class="mark">${o.mark}</span>` : ''}
+    ${o.mark !== undefined ? `<span class="mark${o.markCls ? ' '+o.markCls : ''}">${o.mark}</span>` : ''}
     ${o.go !== undefined ? `<span class="go">${esc(o.go)}</span>` : ''}
   </button>`;
 }
@@ -1408,6 +1475,22 @@ function lastDone(id){
 /* A day is either kept or it is not — checking twice does not make it
    truer, it just inflates the streak. So a check-off is idempotent for
    the day, and tapping again takes it back rather than adding another. */
+/* Tasks used to be a `timed` boolean. Reading the old shape rather than
+   rewriting it means nothing to migrate and no chance of a half-done
+   rewrite — an old task keeps working untouched. */
+const recordsOf = c => (c && c.records) || (c && c.timed ? 'time' : 'tick');
+const isMetric = ex => !!ex && typeOf(ex.type).kind === 'checkoff' && recordsOf(ex.cfg) === 'number';
+const unitOf = ex => (ex && ex.cfg && ex.cfg.unit) || '';
+const valueOf = s => s && s.detail && typeof s.detail.value === 'number' ? s.detail.value : null;
+/* Weighing yourself is not a habit you kept. It is a measurement, so it
+   stays out of every count, chart and streak that answers "did you do
+   it" — those are about turning up, and a number on a scale says
+   nothing about that. Both tests matter: the value catches a reading
+   whose task has since been deleted, the config catches an older record
+   saved before there was a value to put in it. */
+const isReading = s => !!s && (valueOf(s) !== null
+  || isMetric(exercises.find(e=>e.id === s.exerciseId)));
+
 const doneOn = (ex, date) => !!ex && didOn(ex.id, date || new Date());
 const doneToday = ex => doneOn(ex, new Date());
 
@@ -1419,7 +1502,8 @@ function checkOff(ex, date){
   const day = date ? dayStart(date) : null;
   const isToday = !day || day.getTime() === dayStart(new Date()).getTime();
   if(doneOn(e, day || new Date())) return false;
-  if(e.cfg && e.cfg.timed){ openLog(e.id, null, day); return false; }
+  if(isMetric(e)){ openMetric(e, day); return false; }
+  if(e.cfg && recordsOf(e.cfg) === 'time'){ openLog(e.id, null, day); return false; }
   /* mid-morning on a backfilled day, so it sorts sensibly among the rest */
   const when = isToday ? Date.now() : day.getTime() + 10*3600000;
   commitSession(makeSession(e, {start: when, dur: 0, source: isToday ? 'app' : 'manual'}));
@@ -1437,11 +1521,116 @@ function uncheckOn(ex, date){
 const uncheckToday = ex => uncheckOn(ex, new Date());
 TYPES.task.open = ()=>{
   const d = detailDay || new Date();
+  if(isMetric(cur)) return openMetric(cur, detailDay);
   doneOn(cur, d) ? uncheckOn(cur, d) : checkOff(cur, d);
   /* stay put, so the button flips under your finger and the screen
      never changes shape */
   openExercise(cur.id, detailDay);
 };
+
+/* ══ measurements ══════════════════════════════════════════════
+   A task that records a number rather than a tick. The record is an
+   ordinary session with the value in its detail, so storage, backup,
+   editing and the date windows all work untouched — only the entry
+   screen and the chart are new. */
+makeScreen('metric', {title:'Reading', html:`
+  <div class="scroll" id="metricBody"></div>`});
+
+let metricEx = null, metricDay = null, metricRec = null, metricVal = 0;
+
+/* `rec` names the exact reading to edit, which the readings list needs:
+   two readings on one day are both real, and finding one by date would
+   leave the other uncorrectable. 'new' forces a blank one instead. */
+function openMetric(ex, day, rec){
+  metricEx = ex || cur;
+  if(!metricEx) return;
+  metricDay = day ? dayStart(day) : null;
+  if(rec === 'new') metricRec = null;
+  else if(rec) metricRec = rec;
+  else {
+    const a = metricDay || dayStart(new Date()), b = addDays(a, 1);
+    metricRec = sessionsFor(metricEx.id).find(x=>inRange(x, a, b)) || null;
+  }
+  /* a reading with no value is one the old log form made; it is not a
+     number to carry forward */
+  const prior = sessionsFor(metricEx.id).filter(x=>x !== metricRec && valueOf(x) !== null);
+  const last = prior.length ? prior[0] : null;
+  const unit = unitOf(metricEx);
+  const step = (metricEx.cfg && +metricEx.cfg.step) || 0.2;
+
+  /* The stepper has to open on a number. Falling through to null stored
+     a reading of null — invisible in the chart and in every tile, which
+     looks exactly like the save silently failing. */
+  const seed = {lbs:150, kg:70, bpm:60, hrs:8}[unit];
+  metricVal = valueOf(metricRec);
+  if(metricVal === null) metricVal = valueOf(last);
+  if(metricVal === null) metricVal = seed != null ? seed : 0;
+
+  const when = metricRec ? new Date(metricRec.start)
+             : metricDay ? new Date(metricDay.getTime() + 10*3600000)
+             : new Date();
+
+  /* self-pushing, like the log form: the readings list reaches this
+     screen without pushing for it */
+  pushOrigin();
+  el('metricBody').innerHTML = `
+    <h2 class="sec" style="margin-top:0">When</h2>
+    <div class="half">
+      <div><input type="date" id="mxDate" value="${dateVal(when)}"></div>
+      <div><input type="time" id="mxTime" value="${timeVal(when)}"></div>
+    </div>
+
+    <h2 class="sec">${esc(metricEx.name)}</h2>
+    <div style="display:flex;justify-content:center">
+      ${steprHTML('mxVal', metricVal, {label:metricEx.name, fmt:v=>fmtVal(v, step)})}
+    </div>
+    ${unit ? `<p class="note" style="text-align:center;margin-top:8px">${esc(unit)} · ${fmtVal(step, step)} steps</p>` : ''}
+
+    ${last ? `<p class="note" style="margin-top:24px">Last reading <b>${fmtVal(valueOf(last), step)}${unit ? ' ' + esc(unit) : ''}</b> on ${dWeek(last.start)}.</p>` : ''}
+
+    <button class="primary" id="mxSave" style="margin-top:28px">${metricRec ? 'Save reading' : 'Add reading'}</button>
+    ${metricRec ? '<button class="ghost danger" id="mxDel">Delete reading</button>' : ''}`;
+
+  wireStepr('mxVal', ()=>metricVal, v=>{ metricVal = v; },
+    {min:0, max:2000, step, fmt:v=>fmtVal(v, step)});
+
+  el('mxSave').addEventListener('click', ()=>{
+    const [y,mo,da] = el('mxDate').value.split('-').map(Number);
+    const [hh,mi]   = el('mxTime').value.split(':').map(Number);
+    /* a dead button teaches you nothing — say which field is empty */
+    if(!y || isNaN(hh)){
+      const btn = el('mxSave'), was = btn.textContent;
+      btn.textContent = !y ? 'Pick a date first' : 'Pick a time first';
+      setTimeout(()=>{ btn.textContent = was; }, 2200);
+      return;
+    }
+    const start = new Date(y, mo-1, da, hh, mi).getTime();
+    if(!isFinite(metricVal)) metricVal = 0;
+    if(metricRec){
+      metricRec.start = start; metricRec.end = start;
+      metricRec.detail = {value: metricVal, unit};
+      sessionsChanged();
+      popOrigin();
+    } else {
+      commitSession(makeSession(metricEx, {
+        start, dur: 0, source: metricDay ? 'manual' : 'app',
+        detail: {value: metricVal, unit}
+      }));
+    }
+  });
+
+  const del = el('mxDel');
+  if(del) del.addEventListener('click', ()=>
+    confirmTap(del, 'Tap again to delete', 'Delete reading', ()=>{
+      removeSession(metricRec);
+      metricRec = null;
+      popOrigin();
+    }));
+
+  show('metric');
+}
+/* a step of 1 or more needs no decimal; .2 and .1 need one */
+const fmtVal = (v, step) => (step % 1 === 0) ? String(Math.round(v)) : (Math.round(v*10)/10).toFixed(1);
 
 /* ══ backup ════════════════════════════════════════════════════
    One file holding everything. Import MERGES rather than replaces,
@@ -1497,13 +1686,24 @@ let originStack = [];
 let lastRoot = 'home';
 
 function pushOrigin(){
-  originStack.push({screen, exId: cur ? cur.id : null});
+  const next = {screen, exId: cur ? cur.id : null,
+                key: ORIGIN_KEY[screen] ? ORIGIN_KEY[screen]() : null};
+  /* Two pushes with no screen change between them is always a mistake —
+     one route pushing and then calling something that pushes for itself.
+     The second entry can only send Back to where it already was, and it
+     survives to misdirect a later Back, so drop it here rather than
+     policing every call site. */
+  const top = originStack[originStack.length - 1];
+  if(top && top.screen === next.screen && top.exId === next.exId
+     && top.key === next.key) return;
+  originStack.push(next);
   if(originStack.length > 8) originStack.shift();
 }
 function popOrigin(){
   const o = originStack.pop();
   if(!o) return goRoot();
   if(ROOTS.includes(o.screen)) return goRoot(o.screen);
+  if(ORIGIN_OPEN[o.screen]) return ORIGIN_OPEN[o.screen](o.key);
   if(o.screen === 'exercise'){
     /* the thing it was showing may have been deleted since */
     if(o.exId && exercises.some(x=>x.id === o.exId)) return openExercise(o.exId);
@@ -1513,28 +1713,28 @@ function popOrigin(){
 }
 function goRoot(which){
   const r = which || lastRoot;
+  if(ROOT_RENDER[r]){ ROOT_RENDER[r](); return show(r); }
   if(r === 'stats'){ renderStats(); return show('stats'); }
   if(r === 'settings') return show('settings');
   resetAccent(); renderHome(); show('home');
 }
 
 let screen = 'home', cur = null, editing = null;
-/* Screens injected by a module can register where Back returns to. */
-const BACKTO = {};
-const TITLES = {home:'BETR', stats:'Stats', settings:'Settings', newtype:'Add new', exercise:'Details', editor:'Edit', med:'Meditation', log:'Log a past one', preset:'Choose a plan'};
 
 function show(name){
   screen = name;
   document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('on', s.id === 's'+'-'+name));
   const sec = el('s'+'-'+name);
   document.body.classList.toggle('session', !!sec && sec.classList.contains('sessionScreen'));
-  const rooted = ['home','stats','settings'].includes(name);
+  const rooted = ROOTS.includes(name);
   el('back').hidden = rooted;
   el('back').textContent = (name === 'editor') ? '✕' : '‹';
   el('title').textContent = name === 'editor' && editing && editing.isNew ? 'Add new' : (TITLES[name] || 'BETR');
+  /* Which tab stays lit: itself if it is one, the tab that owns it if a
+     module claimed it, none during a session, otherwise Exercises. */
+  const owner = rooted ? name : (TAB_OF[name] || (name === 'session' ? null : 'home'));
   document.querySelectorAll('.nav button').forEach(b=>{
-    const on = b.dataset.tab === name || (!rooted && name !== 'session' && b.dataset.tab === 'home');
-    b.setAttribute('aria-current', on ? 'page' : 'false');
+    b.setAttribute('aria-current', owner && b.dataset.tab === owner ? 'page' : 'false');
   });
   if(ROOTS.includes(name)) lastRoot = name;
   if(name !== 'home' && name !== 'log' && name !== 'exercise') dayOffset = 0;
@@ -1631,7 +1831,9 @@ function todayBlock(){
     .map(id=>exercises.find(e=>e.id === id))
     .filter(e=>e && !plannedFor(d).some(p=>p.id === e.id));
   const planned = plannedFor(d).concat(extra);
-  const left = planned.filter(e=>!didOn(e.id, d)).length;
+  /* A reading you have not taken does not leave the day unfinished.
+     "All done" is about the things you set out to do. */
+  const left = planned.filter(e=>!isMetric(e) && !didOn(e.id, d)).length;
 
   /* One row per planned exercise, so the plan stays readable — then a
      row of its own for every session after the first, so a day you
@@ -1658,6 +1860,21 @@ function todayBlock(){
     + rows.map(({ex:e, session})=>{
         const t = typeOf(e.type), done = session ? true : didOn(e.id, d);
         const unplanned = !(e.sched && e.sched.days && e.sched.days.includes(d.getDay()));
+        /* A reading shows what it read, not a tick. The tick is the
+           habit mark, and this is a number, not a thing kept up. */
+        if(isMetric(e)){
+          const rec = session || sessions.filter(x=>x.exerciseId === e.id
+                        && inRange(x, d, addDays(d,1)) && valueOf(x) !== null)[0];
+          const u = unitOf(e) ? ' ' + unitOf(e) : '';
+          return rowHTML({
+            cls: 'today',
+            attr: session ? `data-sid="${session.start}"` : `data-e="${e.id}"`,
+            accent: t.accent, name: e.name,
+            sub: esc(t.name) + (rec ? ' · ' + esc(dTime(rec.start)) : ''),
+            mark: rec && valueOf(rec) !== null ? esc(valueOf(rec) + u) : '',
+            markCls: 'reading'
+          });
+        }
         return rowHTML({
           cls: 'today' + (done?' isdone':'') + (session?' again':''),
           attr: session ? `data-sid="${session.start}"` : `data-e="${e.id}"`,
@@ -1672,6 +1889,22 @@ function todayBlock(){
 /* One exercise row — the same markup whether it sits in a group or not. */
 function exerciseRow(e){
   const t = typeOf(e.type), done = didOn(e.id, new Date());
+  /* A measurement wears its number, not a tick. The tick means "kept
+     up", which is the one thing a reading does not report — and the
+     number is what you opened the app to see. */
+  if(isMetric(e)){
+    const last = sessionsFor(e.id).filter(s=>valueOf(s) !== null)[0];
+    const u = unitOf(e) ? ' ' + unitOf(e) : '';
+    const ago = last && Math.floor((dayStart(new Date()) - dayStart(last.start)) / DAY);
+    return rowHTML({
+      attr: `data-e="${e.id}"`, accent: t.accent, name: e.name,
+      sub: `${esc(t.name)} · ${esc(summaryOf(e))}<br>${
+        last ? `<b>${esc(valueOf(last) + u)}</b> · ${
+          esc(ago === 0 ? 'today' : ago === 1 ? 'yesterday' : ago + ' days ago')}`
+             : 'No readings yet'}`,
+      go: '›'
+    });
+  }
   return rowHTML({
     cls: (t.ready?'':'dim') + (done?' isdone':''),
     attr: `data-e="${e.id}"`, accent: t.accent, name: e.name,
@@ -1747,9 +1980,11 @@ el('homeBody').addEventListener('click', e=>{
   if(b.classList.contains('today')){
     const d = viewDay(), z = addDays(d, 1);
     const ex = exercises.find(x=>x.id === b.dataset.e);
-    /* A task always opens its own screen, ticked or not. The toggle there
-       is the only way to do it, so the interface never changes shape. */
-    if(ex && typeOf(ex.type).kind === 'checkoff' && !(ex.cfg && ex.cfg.timed))
+    /* A measurement goes straight to its number — the point of putting it
+       in Today is that it is two taps. A plain task opens its own screen,
+       ticked or not, so the interface never changes shape. */
+    if(isMetric(ex)) return openMetric(ex, dayOffset ? d : null);
+    if(ex && typeOf(ex.type).kind === 'checkoff' && recordsOf(ex.cfg) === 'tick')
       return openExercise(ex.id, dayOffset ? d : null);
     /* Anything already recorded opens for correction rather than logging twice. */
     const rec = sessions.filter(x=>x.exerciseId === b.dataset.e && inRange(x, d, z))
@@ -1863,13 +2098,15 @@ function openExercise(id, day){
       ? `<button class="primary" id="logForEx">Log a session</button>`
       : `<button class="primary" id="startEx" ${t.ready?'':'disabled'}>${
           !t.ready ? 'Coming soon'
+          : isMetric(cur) ? (doneOn(cur, detailDay || new Date()) ? 'Edit the reading' : 'Add a reading')
           : t.kind === 'checkoff' ? (doneOn(cur, detailDay || new Date())
               ? `Done${detailDay ? ' ' + esc(dWeek(detailDay)) : ' today'} — tap to undo`
               : `Check off${detailDay ? ' for ' + esc(dWeek(detailDay)) : ''}`)
           : 'Start'}</button>`}
     ${t.ready ? '<button class="ghost" id="editEx">Edit exercise</button>' : ''}
     <button class="ghost" id="dupEx">Duplicate</button>
-    ${cur.logOnly ? '' : `<button class="ghost" id="logForEx">${esc(t.logPastLabel || 'Log a past session')}</button>`}
+    ${cur.logOnly ? '' : `<button class="ghost" id="logForEx">${
+      esc(isMetric(cur) ? 'Add a past reading' : (t.logPastLabel || 'Log a past session'))}</button>`}
     ${t.detailExtra ? t.detailExtra(cur) : ''}
     <button class="ghost danger" id="delEx">Delete</button>`;
   show('exercise');
@@ -1884,6 +2121,9 @@ el('exerciseDetail').addEventListener('click', e=>{
   }
   if(e.target.closest('#logForEx')){
     const ty = typeOf(cur.type);
+    /* The log form has no field for a number, so it was writing readings
+       with nothing in them — a save that looks fine and charts nothing. */
+    if(isMetric(cur)) return openMetric(cur, detailDay, 'new');
     /* Sets and weights are recalled facts, so those types reopen their
        own table. Combos and rounds are generated, so those get the
        duration form instead — inventing a combo count would be fiction. */
@@ -2854,9 +3094,9 @@ let statView = 'days', statOffset = 0, statType = 'all', statTask = 'all';
    the Body and Mind streaks answer. At-home training keeps the Body
    streak exactly as a class does. */
 function currentStreak(sel){
-  const pool = !sel || sel === 'all' ? sessions
+  const pool = !sel || sel === 'all' ? sessions.filter(s=>!isReading(s))
     : sel === 'training' ? sessions.filter(s=>!isUpkeep(s))
-    : sel === 'upkeep' ? sessions.filter(isUpkeep)
+    : sel === 'upkeep' ? sessions.filter(s=>isUpkeep(s) && !isReading(s))
     : sel === 'cat:physical' ? sessions.filter(s=>s.category === 'physical')
     : sel === 'cat:mental' ? sessions.filter(s=>s.category === 'mental')
     : String(sel).startsWith('ex:') ? sessions.filter(s=>s.exerciseId === String(sel).slice(3))
@@ -3013,7 +3253,7 @@ const ofType = list => (statType === 'all' || statType === 'cat:both')
     ? list.filter(s=>!isUpkeep(s) && s.category === statType.slice(4))
     : list.filter(s=>!isUpkeep(s) && s.type === statType);
 const ofTask = list => statTask === 'all'
-  ? list.filter(isUpkeep)
+  ? list.filter(s=>isUpkeep(s) && !isReading(s))
   : list.filter(s=>s.exerciseId === statTask);
 
 /* One chart, drawn twice — once for training, once for upkeep. */
@@ -3098,6 +3338,64 @@ function exerciseSection(w){
     + sessionRows(list);
 }
 
+/* A measurement is not additive — you cannot add Monday's 172 to
+   Tuesday's 171 — so it gets a line, not a stacked bar, and an axis that
+   spans the data rather than starting at zero. A zero-based axis would
+   flatten the four-pound move you are actually watching. Buckets with no
+   reading leave a gap rather than inventing a point. */
+function lineChartHTML(w, list, step){
+  const pts = w.buckets.map((b, i)=>{
+    const inB = list.filter(s=>inRange(s, b.from, b.to)).map(valueOf).filter(v=>v !== null);
+    return {i, label: b.label,
+            v: inB.length ? inB.reduce((a,c)=>a+c, 0) / inB.length : null};
+  });
+  const vals = pts.map(p=>p.v).filter(v=>v !== null);
+  if(!vals.length) return `<p class="empty">No readings in this window.</p>`;
+
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  const pad = Math.max((hi - lo) * 0.25, step * 2, 0.5);
+  lo -= pad; hi += pad;
+  const span = hi - lo || 1;
+
+  const W = 354, H = 150, TOP = 10, BOT = 140;
+  const num = v => (step % 1 === 0) ? String(Math.round(v)) : (Math.round(v*10)/10).toFixed(1);
+  /* The gutter has to fit the widest label. A fixed 30 clipped the
+     leading digit off anything past four characters, so "177.6" read
+     as ".77.6" — a wrong number, not just a cramped one. */
+  const ticks = [hi, (hi + lo) / 2, lo].map(num);
+  const L = Math.max(24, Math.max(...ticks.map(t=>t.length)) * 6 + 6);
+  const x = i => L + ((W - L) / w.buckets.length) * (i + 0.5);
+  const y = v => BOT - ((v - lo) / span) * (BOT - TOP);
+
+  /* one polyline per unbroken run, so a gap stays a gap */
+  const runs = [];
+  let run = [];
+  pts.forEach(p=>{
+    if(p.v === null){ if(run.length) runs.push(run); run = []; }
+    else run.push(`${x(p.i).toFixed(1)},${y(p.v).toFixed(1)}`);
+  });
+  if(run.length) runs.push(run);
+
+  const grid = ticks.map((t, k)=>{
+    const gy = [TOP, (TOP + BOT) / 2, BOT][k];
+    return `<line x1="${L}" y1="${gy}" x2="${W}" y2="${gy}" stroke="var(--line)" stroke-width="1"></line>
+      <text x="${L - 4}" y="${gy + 4}" text-anchor="end" font-family="var(--mono)" font-size="10" fill="var(--text-dim)">${esc(t)}</text>`;
+  }).join('');
+
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img"
+      aria-label="${esc(w.title)}: ${esc(num(vals[0]))} to ${esc(num(vals[vals.length-1]))}">
+      ${grid}
+      ${runs.filter(r=>r.length > 1).map(r=>
+        `<polyline points="${r.join(' ')}" fill="none" stroke="var(--text)" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round"></polyline>`).join('')}
+      ${pts.filter(p=>p.v !== null).map(p=>
+        `<circle cx="${x(p.i).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="4"
+           fill="var(--text)" stroke="var(--bg)" stroke-width="2"></circle>`).join('')}
+    </svg>
+    <div class="axis" style="padding-left:${L}px">${
+      w.buckets.map(b=>`<span>${esc(b.label)}</span>`).join('')}</div>`;
+}
+
 function upkeepSection(w){
   const tasks = exercises.filter(e=>typeOf(e.type).category === 'upkeep')
                          .sort((a,b)=>a.name.localeCompare(b.name));
@@ -3113,11 +3411,48 @@ function upkeepSection(w){
     ? tasks.map(e=>{
         const n = sessionsIn(w.from, w.to).filter(s=>s.exerciseId === e.id).length;
         const st = currentStreak('ex:' + e.id);
+        const latest = isMetric(e) ? sessionsFor(e.id).map(valueOf).filter(v=>v !== null)[0] : null;
         return rowHTML({attr:`data-upk="${esc(e.id)}"`, accent:'var(--upkeep)',
           name:e.name, nameStyle:'font-size:17px',
-          sub:`${n} in this window${st ? ` · ${st} day streak` : ''}`, go:'›'});
+          sub: latest != null
+            ? `${latest}${unitOf(e) ? ' ' + unitOf(e) : ''} · ${n} in this window`
+            : `${n} in this window${st ? ` · ${st} day streak` : ''}`, go:'›'});
       }).join('')
     : sessionRows(list);
+
+  /* A measurement answers a different question from a habit — not how
+     often, but where it is now and which way it is going. */
+  const picked = statTask === 'all' ? null : exercises.find(e=>e.id === statTask);
+  if(picked && isMetric(picked)){
+    const step = (picked.cfg && +picked.cfg.step) || 0.2;
+    const unit = unitOf(picked);
+    const num = v => (step % 1 === 0) ? String(Math.round(v)) : (Math.round(v*10)/10).toFixed(1);
+    const inW = list.filter(s=>valueOf(s) !== null).sort((a,b)=>a.start - b.start);
+    const vals = inW.map(valueOf);
+    const first = vals.length ? vals[0] : null;
+    const latestAll = sessionsFor(picked.id).map(valueOf).filter(v=>v !== null)[0];
+    const change = vals.length > 1 ? vals[vals.length-1] - first : null;
+    const avg = vals.length ? vals.reduce((a,c)=>a+c, 0) / vals.length : null;
+
+    return `<div style="height:20px"></div>` + sectionRow('Upkeep', 'statTask', opts, statTask)
+      + `<div class="totals">
+          ${tileHTML(latestAll != null ? num(latestAll) : '—', unit ? 'Now · ' + unit : 'Now', true)}
+          ${tileHTML(change == null ? '—' : (change > 0 ? '+' : change < 0 ? '−' : '') + num(Math.abs(change)), 'Change', true)}
+          ${tileHTML(avg == null ? '—' : num(avg), 'Average', true)}
+        </div>`
+      + lineChartHTML(w, inW, step)
+      /* not "Sessions per week" — nothing on this chart is a count */
+      + `<div class="key"><span>${esc('Average per ' +
+          (statView === 'days' ? 'day' : statView === 'weeks' ? 'week' : 'month'))}</span></div>`
+      + (inW.length
+          ? inW.slice().reverse().map(sv=>`
+              <button class="sess" data-sid="${sv.start}">
+                <div class="when">${esc(dWeek(sv.start))}
+                  <small>${esc(dTime(sv.start))}</small></div>
+                <b>${esc(num(valueOf(sv)))}${unit ? ' ' + esc(unit) : ''}</b>
+              </button>`).join('')
+          : '');
+  }
 
   return `<div style="height:20px"></div>` + sectionRow('Upkeep', 'statTask', opts, statTask)
     + `<div class="totals">
@@ -3189,7 +3524,12 @@ function openLog(exId, existing, day){
   logDay = day || null;
   logKey = existing ? existing.start : null;
   pushOrigin();
-  const pool = exercises.filter(e=>typeOf(e.type).ready);
+  /* A measurement is never offered here — this form has no field for a
+     number, so picking one from the dropdown would write a reading with
+     nothing in it. Its own record stays selectable so an older entry is
+     not mislabelled as deleted. */
+  const pool = exercises.filter(e=>typeOf(e.type).ready
+    && (!isMetric(e) || (existing && existing.exerciseId === e.id)));
   /* A session outlives its exercise on purpose. Keep it selectable so
      it can still be corrected or deleted, and never let it silently
      re-attach itself to whatever happens to be first in the list. */
@@ -3209,7 +3549,7 @@ function openLog(exId, existing, day){
   const written = kindOf === 'written' || kindOf === 'checkoff';
   /* A check-off only asks how long if it was set up to record time.
      Otherwise there is nothing to say beyond the date. */
-  const wantsTime = !(kindOf === 'checkoff' && !(subject && subject.cfg && subject.cfg.timed));
+  const wantsTime = !(kindOf === 'checkoff' && recordsOf(subject && subject.cfg) !== 'time');
   /* A task is ticked, not logged — "delete" is the wrong word for undoing it. */
   const isCheck = kindOf === 'checkoff';
 
@@ -5376,6 +5716,325 @@ window.releaseBlockWait = ()=>{
 })();
 /* ╔══════════════════════════════════════════════════════════════╗
    ║  CIRCUIT MODULE — END                                        ║
+   ╚══════════════════════════════════════════════════════════════╝ */
+
+/* ╔══════════════════════════════════════════════════════════════╗
+   ║  MEALS MODULE — START                                        ║
+   ║  Remove this block and the app loses the Meals tab and        ║
+   ║  nothing else. It writes no sessions and touches no exercise. ║
+   ╚══════════════════════════════════════════════════════════════╝ */
+(function(){
+/* A meal here is a reference card, not a log. You work the calories out
+   once and the card keeps them, so nothing has to be counted again at
+   the moment you are hungry. That is why there are no dates on a meal
+   and nothing to tick: the question it answers is "what do I eat and
+   what is in it", not "what did I eat today". */
+
+const K_MEALS = 'practice.meals.v1';
+const WHENS = [['breakfast','Breakfast'],['lunch','Lunch'],['dinner','Dinner'],['snack','Snack']];
+const whenName = w => (WHENS.find(x=>x[0] === w) || WHENS[0])[1];
+
+let meals = readList(K_MEALS, []);
+const saveMeals = ()=>write(K_MEALS, meals);
+const mealOf = id => meals.find(m=>m.id === id) || null;
+/* a row with no number is still an ingredient — it just adds nothing */
+const kcalOf = m => (m && m.items || []).reduce((n,i)=>n + (+i.k || 0), 0);
+const num = n => Math.round(n).toLocaleString();
+
+/* ── backup ───────────────────────────────────────────────────
+   Meals ride in the same file as everything else, and merge the same
+   way: anything already here wins, so restoring an old backup can
+   never undo a card you have since corrected. */
+EXPORTERS.meals = {
+  get:  ()=>meals,
+  count:list=>`${(list||[]).length} meals`,
+  merge:list=>{
+    const have = new Set(meals.map(m=>m.id));
+    (list||[]).forEach(m=>{ if(m && m.id && !have.has(m.id)) meals.push(m); });
+    saveMeals();
+  }
+};
+
+/* ── styles ───────────────────────────────────────────────── */
+const css = document.createElement('style');
+css.textContent = `
+  .mealTot{
+    display:flex;align-items:baseline;justify-content:space-between;
+    padding:14px 15px;background:var(--surface);border-radius:2px;
+  }
+  .mealTot .lab{font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;
+    font-size:11px;font-weight:600;color:var(--text-dim);}
+  .mealTot .amt{font-family:var(--mono);font-size:19px;}
+  .mealTot .amt small{font-size:12px;color:var(--text-dim);}
+  .mealTot.fill{background:var(--meal);color:var(--on-meal);margin-top:16px;}
+  .mealTot.fill .lab,.mealTot.fill .amt small{color:var(--on-meal);}
+  .mealHero{
+    display:flex;align-items:baseline;gap:9px;margin-top:20px;
+    padding:16px 15px;background:var(--meal);color:var(--on-meal);border-radius:2px;
+  }
+  .mealHero b{font-family:var(--mono);font-size:30px;line-height:1;font-weight:400;}
+  .mealHero span{font-family:var(--display);text-transform:uppercase;letter-spacing:.16em;
+    font-size:12px;font-weight:600;}
+  .ing{display:flex;align-items:baseline;gap:12px;padding:13px 0;border-bottom:1px solid var(--line);}
+  .ing span{flex:1;font-size:16px;}
+  .ing b{font-family:var(--mono);font-size:14px;font-weight:400;color:var(--text-dim);flex:none;}
+  .mealGrid{display:grid;grid-template-columns:1fr 62px 26px;gap:7px 6px;align-items:center;}
+  .mealGrid .hd{font-family:var(--display);text-transform:uppercase;letter-spacing:.1em;
+    font-size:10px;color:var(--text-dim);padding-bottom:3px;}
+  .mealGrid .hd.mid{text-align:center;}
+  .mealGrid input{
+    width:100%;padding:10px 8px;background:var(--surface);color:var(--text);
+    border:1px solid var(--line);border-radius:2px;font-size:16px;
+    -webkit-appearance:none;appearance:none;
+  }
+  .mealGrid input.k{text-align:center;font-family:var(--mono);padding:10px 2px;}
+  .mealGrid .rm{height:40px;color:var(--text-dim);font-size:17px;display:grid;place-items:center;}
+  .mealGrid .rm[disabled]{opacity:.2;}
+  /* An exercise row runs its subtitle on from the name, which reads well
+     for two short words. "6 ingredients · every day" is a sentence and
+     wraps mid-phrase if it starts halfway along a long title. */
+  .row.mealrow .sub{display:block;}
+  /* four meal times, one row — wrapping "Snack" onto a line of its own
+     made the set look like two different questions */
+  .mealWhen{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+  .mealWhen .chip{padding:11px 0;text-align:center;font-size:11px;letter-spacing:.06em;}
+`;
+document.head.appendChild(css);
+
+/* ── screens and tab ──────────────────────────────────────── */
+makeScreen('meals',    {title:'Meals'});
+makeScreen('meal',     {title:'Meal'});
+makeScreen('mealedit', {title:'Edit meal'});
+ROOTS.push('meals');
+/* the brand yellow, not whatever exercise was last open — a meal is not
+   an activity and must not borrow an activity's colour */
+ROOT_RENDER.meals = ()=>{ resetAccent(); renderMeals(); };
+TAB_OF.meal = 'meals';
+TAB_OF.mealedit = 'meals';
+/* Without these, Back falls through to the home screen — the router
+   only pops the origin stack for screens it knows by name. */
+BACKTO.meal = ()=>popOrigin();
+BACKTO.mealedit = ()=>popOrigin();
+/* so Back out of the editor returns to the meal you were reading, not
+   to the top of the list */
+ORIGIN_KEY.meal = ()=>mealId;
+ORIGIN_OPEN.meal = k => mealOf(k) ? openMeal(k) : goRoot('meals');
+
+const tab = document.createElement('button');
+tab.dataset.tab = 'meals';
+tab.innerHTML = '<b>▧</b>Meals';
+el('nav').insertBefore(tab, el('nav').children[1]);
+
+/* ── the list ─────────────────────────────────────────────── */
+function renderMeals(){
+  const body = el('mealsBody'); if(!body) return;
+  if(!meals.length){
+    body.innerHTML = `<p class="empty">No meals yet. Add the things you actually eat, work out the
+      calories once, and they are here the next time you are deciding what to make.</p>
+      <button class="addbtn" id="addMeal">+ Add meal</button>`;
+    return;
+  }
+  /* The one number the library is for: what a normal day comes to. It
+     sums only the meals marked as usual, so a card you eat twice a year
+     cannot quietly inflate it. */
+  const usual = meals.filter(m=>m.usual);
+  const head = usual.length
+    ? `<div class="mealTot">
+        <span class="lab">Typical day</span>
+        <span class="amt">${esc(num(usual.reduce((n,m)=>n + kcalOf(m), 0)))} <small>kcal</small></span>
+      </div>`
+    : '';
+
+  const groups = WHENS.map(([id, label])=>{
+    const list = meals.filter(m=>(m.when || 'breakfast') === id)
+                      .sort((a,b)=>a.name.localeCompare(b.name));
+    if(!list.length) return '';
+    return `<h2 class="grp">${esc(label)}</h2>` + list.map(m=>{
+      const n = (m.items || []).length;
+      return rowHTML({
+        cls:'mealrow', attr:`data-ml="${esc(m.id)}"`, accent:'var(--meal)', name:m.name,
+        sub:`${n} ingredient${n === 1 ? '' : 's'}${m.usual ? ' · every day' : ''}`,
+        mark:esc(num(kcalOf(m))), markCls:'reading', go:'›'
+      });
+    }).join('');
+  }).join('');
+
+  body.innerHTML = head + groups + `<button class="addbtn" id="addMeal">+ Add meal</button>`;
+}
+
+el('mealsBody').addEventListener('click', e=>{
+  if(e.target.closest('#addMeal')){ pushOrigin(); return openMealEdit(null); }
+  const r = e.target.closest('[data-ml]');
+  if(r){ pushOrigin(); openMeal(r.dataset.ml); }
+});
+
+/* ── reading one ──────────────────────────────────────────── */
+let mealId = null;
+
+function openMeal(id){
+  const m = mealOf(id);
+  if(!m) return goRoot('meals');
+  mealId = id;
+  const items = m.items || [];
+  const since = m.updated
+    ? Math.floor((dayStart(new Date()) - dayStart(m.updated)) / DAY) : null;
+  el('mealBody').innerHTML = `
+    <p class="eyebrow">${esc(whenName(m.when))}${m.usual ? ' · every day' : ''}</p>
+    <h2 class="hero">${esc(m.name)}</h2>
+
+    <div class="mealHero"><b>${esc(num(kcalOf(m)))}</b><span>kcal</span></div>
+
+    ${items.length ? `<h2 class="sec">Ingredients</h2>` + items.map(i=>`
+      <div class="ing"><span>${esc(i.t || '—')}</span><b>${
+        +i.k ? esc(num(+i.k)) : '·'}</b></div>`).join('') : ''}
+
+    ${m.note ? `<h2 class="sec">How</h2><p class="note">${esc(m.note)}</p>` : ''}
+
+    ${m.updated ? `<p class="note" style="margin-top:18px">Worked out ${
+      esc(dDay(m.updated))}${since > 30 ? ' · ' + Math.floor(since/30) + ' months ago' : ''}.
+      ${since > 90 ? 'Worth a second look if the recipe has drifted.' : ''}</p>` : ''}
+
+    <button class="ghost" id="editMeal" style="margin-top:26px">Edit</button>`;
+  show('meal');
+}
+
+el('mealBody').addEventListener('click', e=>{
+  if(e.target.closest('#editMeal')){ pushOrigin(); openMealEdit(mealId); }
+});
+
+/* ── editing ──────────────────────────────────────────────── */
+/* A draft, so backing out of a half-typed card changes nothing. */
+let draftMeal = null, draftNew = false;
+
+function openMealEdit(id){
+  const src = id ? mealOf(id) : null;
+  draftNew = !src;
+  draftMeal = src
+    ? JSON.parse(JSON.stringify(src))
+    : {id:'ml' + Date.now(), name:'', when:'breakfast', usual:false, items:[{t:'',k:''}], note:''};
+  if(!draftMeal.items || !draftMeal.items.length) draftMeal.items = [{t:'',k:''}];
+  paintMealEdit();
+  show('mealedit');
+}
+
+function paintMealEdit(){
+  const d = draftMeal;
+  el('mealeditBody').innerHTML = `
+    <h2 class="sec" style="margin-top:0">Name</h2>
+    <input type="text" id="mlName" value="${esc(d.name)}" placeholder="Oats and peanut butter"
+      maxlength="60" autocomplete="off">
+
+    <h2 class="sec">When</h2>
+    <div class="chips mealWhen" id="mlWhen">${WHENS.map(([v,l])=>
+      `<button class="chip" data-w="${v}">${esc(l)}</button>`).join('')}</div>
+
+    <h2 class="sec">How often</h2>
+    <div class="chips" id="mlUsual">
+      <button class="chip" data-u="1">Every day</button>
+      <button class="chip" data-u="0">Sometimes</button>
+    </div>
+    <p class="note">Only the every-day meals add up to the typical day on the list.</p>
+
+    <h2 class="sec">Ingredients</h2>
+    <div class="mealGrid" id="mlGrid">
+      <span class="hd">Item</span><span class="hd mid">Kcal</span><span></span>
+      ${d.items.map((it, i)=>`
+        <input type="text" value="${esc(it.t)}" data-i="${i}" data-f="t"
+          aria-label="Ingredient ${i+1}" placeholder="1 cup rolled oats" autocomplete="off">
+        <input type="text" class="k" inputmode="numeric" value="${esc(it.k)}" data-i="${i}" data-f="k"
+          aria-label="Calories for ingredient ${i+1}">
+        <button class="rm" data-rm="${i}" aria-label="Remove ingredient ${i+1}"
+          ${d.items.length === 1 ? 'disabled' : ''}>×</button>`).join('')}
+    </div>
+    <button class="ghost" id="mlAdd" style="margin-top:12px">+ Add ingredient</button>
+
+    <div class="mealTot fill">
+      <span class="lab">Total</span>
+      <span class="amt" id="mlTotal">${esc(num(kcalOf(d)))} <small>kcal</small></span>
+    </div>
+
+    <h2 class="sec">How you make it</h2>
+    <textarea id="mlNote" placeholder="Optional — method, where you buy it, what to swap"
+      maxlength="400">${esc(d.note || '')}</textarea>
+
+    <button class="primary" id="mlSave" style="margin-top:28px">${
+      draftNew ? 'Save meal' : 'Save changes'}</button>
+    ${draftNew ? '' : '<button class="ghost danger" id="mlDel">Delete meal</button>'}`;
+
+  setChips('mlWhen',  b=>b.dataset.w === (draftMeal.when || 'breakfast'));
+  setChips('mlUsual', b=>(b.dataset.u === '1') === !!draftMeal.usual);
+}
+
+el('mealeditBody').addEventListener('input', e=>{
+  const t = e.target;
+  if(t.id === 'mlName'){ draftMeal.name = t.value; return; }
+  if(t.id === 'mlNote'){ draftMeal.note = t.value; return; }
+  if(t.dataset.f){
+    const it = draftMeal.items[+t.dataset.i]; if(!it) return;
+    /* kept as typed so a half-entered number is not rewritten under the
+       cursor; it is read as a number only when it is added up */
+    it[t.dataset.f] = t.dataset.f === 'k' ? t.value.replace(/[^\d.]/g, '') : t.value;
+    if(t.dataset.f === 'k'){
+      if(t.value !== it.k) t.value = it.k;
+      el('mlTotal').innerHTML = esc(num(kcalOf(draftMeal))) + ' <small>kcal</small>';
+    }
+  }
+});
+
+el('mealeditBody').addEventListener('click', e=>{
+  const w = e.target.closest('[data-w]');
+  if(w){ draftMeal.when = w.dataset.w; return setChips('mlWhen', b=>b === w); }
+  const u = e.target.closest('[data-u]');
+  if(u){ draftMeal.usual = u.dataset.u === '1'; return setChips('mlUsual', b=>b === u); }
+  if(e.target.closest('#mlAdd')){
+    draftMeal.items.push({t:'',k:''});
+    paintMealEdit();
+    const ins = el('mlGrid').querySelectorAll('input[data-f="t"]');
+    return ins[ins.length-1].focus();
+  }
+  const rm = e.target.closest('[data-rm]');
+  if(rm && !rm.disabled){
+    draftMeal.items.splice(+rm.dataset.rm, 1);
+    if(!draftMeal.items.length) draftMeal.items = [{t:'',k:''}];
+    return paintMealEdit();
+  }
+  if(e.target.closest('#mlSave')) return saveDraft();
+  const del = e.target.closest('#mlDel');
+  if(del) confirmTap(del, 'Tap again to delete', 'Delete meal', ()=>{
+    meals = meals.filter(m=>m.id !== draftMeal.id);
+    saveMeals();
+    originStack = [];
+    goRoot('meals');
+  });
+});
+
+function saveDraft(){
+  const d = draftMeal;
+  d.name = (d.name || '').trim() || 'Untitled meal';
+  /* An ingredient with neither a name nor a number is a row you opened
+     and did not use. A one-line meal is a real meal, so nothing here
+     demands a second row. */
+  d.items = d.items.filter(i=>(i.t || '').trim() || (+i.k || 0));
+  d.note = (d.note || '').trim();
+  d.updated = Date.now();
+  const i = meals.findIndex(m=>m.id === d.id);
+  if(i >= 0) meals[i] = d; else meals.push(d);
+  saveMeals();
+  draftMeal = null;
+  renderMeals();
+  openMeal(d.id);
+}
+
+el('nav').addEventListener('click', e=>{
+  const b = e.target.closest('[data-tab="meals"]');
+  /* a running session owns the screen — the other tabs refuse too */
+  if(b && !running){ originStack = []; resetAccent(); renderMeals(); show('meals'); }
+});
+
+renderMeals();
+})();
+/* ╔══════════════════════════════════════════════════════════════╗
+   ║  MEALS MODULE — END                                          ║
    ╚══════════════════════════════════════════════════════════════╝ */
 
 resetAccent();
