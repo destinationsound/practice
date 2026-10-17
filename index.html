@@ -817,7 +817,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '14.2';
+const APP_VERSION = '14.4';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -1100,6 +1100,11 @@ const TYPES = {
   cbt:{      name:'Thought record', category:'mental',   accent:'var(--t-cbt)', ink:'var(--on-t-cbt)', kind:'written',blurb:'CBT worksheets'},
 };
 const typeOf = id => TYPES[id] || TYPES.muaythai;
+/* Declaration order, which is the one fixed order the app has. The home
+   screen sorts exercises by what you did last, but the headings they sit
+   under must not move with them: a heading that travels is a landmark
+   you have to find again every time you open the app. */
+const typeRank = t => { const i = Object.keys(TYPES).indexOf(t); return i < 0 ? 99 : i; };
 const summaryOf = ex => ex.logOnly ? 'Logged by hand'
   : (typeOf(ex.type).summary ? typeOf(ex.type).summary(ex.cfg) : typeOf(ex.type).blurb);
 
@@ -1944,7 +1949,9 @@ function renderHome(){
     if(!list.length) return head + `<div class="nothing">Nothing here yet.</div>`;
     if(c.id === 'upkeep') return head + sortEx(list).map(exerciseRow).join('');
 
-    const order = [...new Set(sortEx(list).map(e=>e.type))];
+    /* Not sortEx here — the sort control moves exercises, never the
+       headings above them. Both Recent and A–Z leave these in place. */
+    const order = [...new Set(list.map(e=>e.type))].sort((a,b)=>typeRank(a) - typeRank(b));
     return head + order.map(type=>{
       const t = typeOf(type), key = c.id + ':' + type;
       const items = sortEx(list.filter(e=>e.type === type));
@@ -3431,6 +3438,11 @@ ORIGIN_OPEN.sessions = k => { histWhich = k; renderSessionList(); show('sessions
 function listBlock(which, label, list, render){
   const draw = render || sessionRows;
   if(!list.length) return render ? '' : sessionRows(list);
+  /* Order first, THEN cut. Sessions are stored oldest-first, so slicing
+     the raw window took the five oldest in it — April, in a seven-month
+     view — and the row renderer then sorted those five newest-first,
+     which made a wrong answer look like a tidy one. */
+  list = list.slice().sort((a,b)=>b.start - a.start);
   const more = list.length > LIST_PEEK;
   return `<${more ? 'button' : 'div'} class="listHead"${more ? ` data-more="${which}"` : ''}>
       <span class="lb">${esc(label)}</span>
