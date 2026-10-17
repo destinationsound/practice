@@ -817,7 +817,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '14.1';
+const APP_VERSION = '14.2';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -5833,6 +5833,36 @@ const mealOf = id => meals.find(m=>m.id === id) || null;
 const kcalOf = m => (m && m.items || []).reduce((n,i)=>n + (+i.k || 0), 0);
 const num = n => Math.round(n).toLocaleString();
 
+/* ── the selection ────────────────────────────────────────────
+   The ticks are a scratch calculator, not a record. No date, no
+   history, nothing accumulating — tap what you are having and read the
+   total. It persists so that opening a card and coming back does not
+   wipe what you were adding up, and so the combination you eat most
+   survives a restart. That last part is the whole job the old "every
+   day" flag was doing, now done by the thing you actually tap, which
+   cannot go stale while claiming otherwise. */
+if(!Array.isArray(G.mealPick)) G.mealPick = [];
+if(typeof G.kcalGoal !== 'number') G.kcalGoal = 0;      /* 0 means unset */
+/* read the old flag once to seed the ticks, then never again — clearing
+   the selection has to stay cleared */
+if(!G.mealPickSeeded && meals.length){
+  /* only spend the one-time flag once there is something to read it
+     from — burning it on an empty library would skip the migration for
+     anyone who adds their meals afterwards by restoring a backup */
+  G.mealPickSeeded = 1;
+  const u = meals.filter(m=>m.usual).map(m=>m.id);
+  if(u.length && !G.mealPick.length) G.mealPick = u;
+  saveGlobal();
+}
+const isPicked = id => G.mealPick.indexOf(id) >= 0;
+/* a meal deleted out from under the selection counts as nothing */
+const pickedMeals = ()=> G.mealPick.map(mealOf).filter(Boolean);
+const pickedTotal = ()=> pickedMeals().reduce((n,m)=>n + kcalOf(m), 0);
+function togglePick(id){
+  G.mealPick = isPicked(id) ? G.mealPick.filter(x=>x !== id) : G.mealPick.concat([id]);
+  saveGlobal();
+}
+
 /* ── backup ───────────────────────────────────────────────────
    Meals ride in the same file as everything else, and merge the same
    way: anything already here wins, so restoring an old backup can
@@ -5851,7 +5881,7 @@ EXPORTERS.meals = {
 const css = document.createElement('style');
 css.textContent = `
   .mealTot{
-    display:flex;align-items:baseline;justify-content:space-between;
+    display:flex;align-items:baseline;justify-content:space-between;gap:9px;
     padding:14px 15px;background:var(--surface);border-radius:2px;
   }
   .mealTot .lab{font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;
@@ -5882,10 +5912,30 @@ css.textContent = `
   .mealGrid input.k{text-align:center;font-family:var(--mono);padding:10px 2px;}
   .mealGrid .rm{height:40px;color:var(--text-dim);font-size:17px;display:grid;place-items:center;}
   .mealGrid .rm[disabled]{opacity:.2;}
-  /* An exercise row runs its subtitle on from the name, which reads well
-     for two short words. "6 ingredients · every day" is a sentence and
-     wraps mid-phrase if it starts halfway along a long title. */
-  .row.mealrow .sub{display:block;}
+  /* A meal row does two things, so it is a row of buttons rather than
+     one button: the box takes the tick, the name opens the card. */
+  .row.mealrow .name,.row.mealrow .sub{display:block;}
+  .row.mealrow .grow{text-align:left;}
+  .row.mealrow .mark{font-family:var(--mono);font-size:15px;color:var(--text-dim);flex:none;}
+  .pickbox{
+    width:26px;height:26px;flex:none;border:1px solid var(--line);border-radius:2px;
+    display:grid;place-items:center;color:var(--text-dim);font-size:14px;
+  }
+  .pickbox[aria-checked=true]{background:var(--meal);border-color:var(--meal);color:var(--on-meal);}
+  .mealTot.tap{width:100%;text-align:left;}
+  .mealTot .ct{font-family:var(--mono);font-size:11px;color:var(--text-dim);}
+  .mealTot.fill .ct{color:var(--on-meal);}
+  .goalBox{padding:14px 15px;background:var(--surface);border-radius:2px;}
+  /* the comparison and the way out of it share a line, so the top of
+     the page stays one block instead of three stacked ones */
+  .pickFoot{display:flex;align-items:baseline;gap:12px;margin-top:9px;}
+  .pickFoot .note{margin:0;flex:1;}
+  .clearPick{
+    flex:none;color:var(--text-dim);font-family:var(--display);text-transform:uppercase;
+    letter-spacing:.1em;font-size:11px;font-weight:600;padding:2px 0;
+  }
+  /* the box costs the name 40px of width, so give a little back */
+  .row.mealrow{gap:11px;}
   /* four meal times, one row — wrapping "Snack" onto a line of its own
      made the set look like two different questions */
   .mealWhen{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
@@ -5926,35 +5976,86 @@ function renderMeals(){
       <button class="addbtn" id="addMeal">+ Add meal</button>`;
     return;
   }
-  /* The one number the library is for: what a normal day comes to. It
-     sums only the meals marked as usual, so a card you eat twice a year
-     cannot quietly inflate it. */
-  const usual = meals.filter(m=>m.usual);
-  const head = usual.length
-    ? `<div class="mealTot">
-        <span class="lab">Typical day</span>
-        <span class="amt">${esc(num(usual.reduce((n,m)=>n + kcalOf(m), 0)))} <small>kcal</small></span>
-      </div>`
-    : '';
-
   const groups = WHENS.map(([id, label])=>{
     const list = meals.filter(m=>(m.when || 'breakfast') === id)
                       .sort((a,b)=>a.name.localeCompare(b.name));
     if(!list.length) return '';
     return `<h2 class="grp">${esc(label)}</h2>` + list.map(m=>{
-      const n = (m.items || []).length;
-      return rowHTML({
-        cls:'mealrow', attr:`data-ml="${esc(m.id)}"`, accent:'var(--meal)', name:m.name,
-        sub:`${n} ingredient${n === 1 ? '' : 's'}${m.usual ? ' · every day' : ''}`,
-        mark:esc(num(kcalOf(m))), markCls:'reading', go:'›'
-      });
+      const n = (m.items || []).length, on = isPicked(m.id);
+      return `<div class="row mealrow">
+        <button class="pickbox" data-pick="${esc(m.id)}" role="checkbox" aria-checked="${on}"
+          aria-label="Include ${esc(m.name)} in the total">${on ? '✓' : ''}</button>
+        <button class="grow" data-ml="${esc(m.id)}">
+          <span class="name">${esc(m.name)}</span>
+          <span class="sub">${n} ingredient${n === 1 ? '' : 's'}</span>
+        </button>
+        <span class="mark">${esc(num(kcalOf(m)))}</span>
+        <span class="go">›</span>
+      </div>`;
     }).join('');
   }).join('');
 
-  body.innerHTML = head + groups + `<button class="addbtn" id="addMeal">+ Add meal</button>`;
+  body.innerHTML = headHTML() + groups + `<button class="addbtn" id="addMeal">+ Add meal</button>`;
+  if(goalOpen) wireGoal();
+}
+
+/* ── the number at the top ────────────────────────────────────
+   What the ticked meals come to, and how that sits against the goal.
+   It states the difference and stops there: no bar that fills red, no
+   colour that turns green. A calorie target is an input you control
+   today, which is worth planning against — but the moment the page
+   grades you on it, it becomes something to avoid opening. */
+let goalOpen = false;
+
+function headHTML(){
+  if(goalOpen) return `<div class="goalBox">
+      <span class="lab" style="font-family:var(--display);text-transform:uppercase;
+        letter-spacing:.14em;font-size:11px;font-weight:600;color:var(--text-dim)">Daily goal</span>
+      <div style="display:flex;justify-content:center;margin:12px 0 4px">
+        ${steprHTML('goalVal', G.kcalGoal || 2000,
+          {label:'Daily calorie goal', fmt:v=>num(v) + ' kcal'})}
+      </div>
+      <button class="ghost" id="goalDone">Done</button>
+      ${G.kcalGoal ? '<button class="clearPick" id="goalOff">Remove the goal</button>' : ''}
+    </div>`;
+
+  const sel = pickedMeals(), tot = pickedTotal(), goal = G.kcalGoal;
+  if(!sel.length && !goal)
+    return `<button class="addbtn" id="goalTap" style="margin-top:0">Set a daily calorie goal</button>`;
+
+  const d = goal - tot;
+  const cmp = d === 0 ? 'exactly on it' : d > 0 ? `${num(d)} under` : `${num(-d)} over`;
+  return `<button class="mealTot tap${sel.length ? ' fill' : ''}" id="goalTap">
+      <span class="lab">${sel.length ? 'Selected' : 'Daily goal'}</span>
+      ${sel.length ? `<span class="ct">${sel.length} meal${sel.length === 1 ? '' : 's'}</span>` : ''}
+      <span class="amt" style="margin-left:auto">${
+        esc(num(sel.length ? tot : goal))} <small>kcal</small></span>
+    </button>`
+    + (sel.length ? `<div class="pickFoot">
+        <p class="note">${goal ? `of ${esc(num(goal))} · ${esc(cmp)}` : 'No goal set'}</p>
+        <button class="clearPick" id="clearPick">Clear</button>
+      </div>` : '');
+}
+
+function wireGoal(){
+  let v = G.kcalGoal || 2000;
+  wireStepr('goalVal', ()=>v, x=>{ v = x; },
+    {min:0, max:10000, step:50, fmt:x=>num(x) + ' kcal'});
+  el('goalDone').addEventListener('click', ()=>{
+    G.kcalGoal = Math.max(0, Math.round(v)); saveGlobal();
+    goalOpen = false; renderMeals();
+  });
+  const off = el('goalOff');
+  if(off) off.addEventListener('click', ()=>{
+    G.kcalGoal = 0; saveGlobal(); goalOpen = false; renderMeals();
+  });
 }
 
 el('mealsBody').addEventListener('click', e=>{
+  const pk = e.target.closest('[data-pick]');
+  if(pk){ togglePick(pk.dataset.pick); return renderMeals(); }
+  if(e.target.closest('#goalTap')){ goalOpen = true; return renderMeals(); }
+  if(e.target.closest('#clearPick')){ G.mealPick = []; saveGlobal(); return renderMeals(); }
   if(e.target.closest('#addMeal')){ pushOrigin(); return openMealEdit(null); }
   const r = e.target.closest('[data-ml]');
   if(r){ pushOrigin(); openMeal(r.dataset.ml); }
@@ -5971,7 +6072,7 @@ function openMeal(id){
   const since = m.updated
     ? Math.floor((dayStart(new Date()) - dayStart(m.updated)) / DAY) : null;
   el('mealBody').innerHTML = `
-    <p class="eyebrow">${esc(whenName(m.when))}${m.usual ? ' · every day' : ''}</p>
+    <p class="eyebrow">${esc(whenName(m.when))}${isPicked(m.id) ? ' · selected' : ''}</p>
     <h2 class="hero">${esc(m.name)}</h2>
 
     <div class="mealHero"><b>${esc(num(kcalOf(m)))}</b><span>kcal</span></div>
@@ -6003,7 +6104,7 @@ function openMealEdit(id){
   draftNew = !src;
   draftMeal = src
     ? JSON.parse(JSON.stringify(src))
-    : {id:'ml' + Date.now(), name:'', when:'breakfast', usual:false, items:[{t:'',k:''}], note:''};
+    : {id:'ml' + Date.now(), name:'', when:'breakfast', items:[{t:'',k:''}], note:''};
   if(!draftMeal.items || !draftMeal.items.length) draftMeal.items = [{t:'',k:''}];
   paintMealEdit();
   show('mealedit');
@@ -6019,13 +6120,6 @@ function paintMealEdit(){
     <h2 class="sec">When</h2>
     <div class="chips mealWhen" id="mlWhen">${WHENS.map(([v,l])=>
       `<button class="chip" data-w="${v}">${esc(l)}</button>`).join('')}</div>
-
-    <h2 class="sec">How often</h2>
-    <div class="chips" id="mlUsual">
-      <button class="chip" data-u="1">Every day</button>
-      <button class="chip" data-u="0">Sometimes</button>
-    </div>
-    <p class="note">Only the every-day meals add up to the typical day on the list.</p>
 
     <h2 class="sec">Ingredients</h2>
     <div class="mealGrid" id="mlGrid">
@@ -6053,8 +6147,7 @@ function paintMealEdit(){
       draftNew ? 'Save meal' : 'Save changes'}</button>
     ${draftNew ? '' : '<button class="ghost danger" id="mlDel">Delete meal</button>'}`;
 
-  setChips('mlWhen',  b=>b.dataset.w === (draftMeal.when || 'breakfast'));
-  setChips('mlUsual', b=>(b.dataset.u === '1') === !!draftMeal.usual);
+  setChips('mlWhen', b=>b.dataset.w === (draftMeal.when || 'breakfast'));
 }
 
 el('mealeditBody').addEventListener('input', e=>{
@@ -6076,8 +6169,6 @@ el('mealeditBody').addEventListener('input', e=>{
 el('mealeditBody').addEventListener('click', e=>{
   const w = e.target.closest('[data-w]');
   if(w){ draftMeal.when = w.dataset.w; return setChips('mlWhen', b=>b === w); }
-  const u = e.target.closest('[data-u]');
-  if(u){ draftMeal.usual = u.dataset.u === '1'; return setChips('mlUsual', b=>b === u); }
   if(e.target.closest('#mlAdd')){
     draftMeal.items.push({t:'',k:''});
     paintMealEdit();
@@ -6094,7 +6185,9 @@ el('mealeditBody').addEventListener('click', e=>{
   const del = e.target.closest('#mlDel');
   if(del) confirmTap(del, 'Tap again to delete', 'Delete meal', ()=>{
     meals = meals.filter(m=>m.id !== draftMeal.id);
-    saveMeals();
+    /* a tick pointing at nothing would be a meal you cannot untick */
+    G.mealPick = G.mealPick.filter(x=>x !== draftMeal.id);
+    saveMeals(); saveGlobal();
     originStack = [];
     goRoot('meals');
   });
