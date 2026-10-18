@@ -842,7 +842,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '15.0';
+const APP_VERSION = '15.1';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -1378,15 +1378,6 @@ const plannedFor  = d => exercises.filter(e=>scheduledOn(e, d));
 function didOn(exId, d){
   const a = dayStart(d), b = addDays(a, 1);
   return sessions.some(s=>s.exerciseId === exId && inRange(s, a, b));
-}
-function adherence(a, b){
-  const now = new Date();
-  let plan = 0, hit = 0;
-  for(const d = new Date(a); d < b; d.setDate(d.getDate()+1)){
-    if(dayStart(d) >= dayStart(now)) break;   // today is still in progress, and the future is not a miss
-    plannedFor(d).forEach(e=>{ plan++; if(didOn(e.id, d)) hit++; });
-  }
-  return {plan, hit};
 }
 function schedLabel(ex){
   if(!ex.sched || !ex.sched.days || !ex.sched.days.length) return '';
@@ -3321,8 +3312,7 @@ function statWindow(){
   });
   return {buckets, from:a, to:addDays(a,7),
           title: statOffset === 0 ? 'This week' : statOffset === -1 ? 'Last week'
-                 : `${dDay(a)} – ${dDay(addDays(a,6))}`,
-          week:true};
+                 : `${dDay(a)} – ${dDay(addDays(a,6))}`};
 }
 
 /* "All" means training. Three checkmarks a day would otherwise swamp
@@ -3448,7 +3438,6 @@ function exerciseSection(w){
   if(!opts.some(o=>o[0] === statType)) statType = 'all';
   const order = t => (typeOf(t).category === 'mental' ? 0 : 1);
   const shown = [...new Set(list.map(s=>s.type))].sort((x,y)=>order(x)-order(y) || x.localeCompare(y));
-  const ad = w.week ? adherence(w.from, w.to) : null;
 
   /* The breakdown rows already are a swatch-name-value list, so a tapped
      bucket does not need a readout of its own: the same rows re-scope to
@@ -3490,7 +3479,6 @@ function exerciseSection(w){
           </div>`
         : '')
     + brk
-    + (ad && ad.plan && !bucket ? `<p class="adh">Planned sessions — <b>${ad.hit} of ${ad.plan}</b></p>` : '')
     + chartHTML(w, ofType, statType === 'cat:both' ? 'category' : 'type', null, tappable)
     /* No caption under the chart, and no swatch row either where the
        breakdown rows carry the same swatches and names — that duplicate
