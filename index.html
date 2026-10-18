@@ -335,6 +335,8 @@
   .tot span{font-family:var(--display);text-transform:uppercase;letter-spacing:.12em;font-size:10px;color:var(--text-dim);}
   .brk{margin:-6px 0 24px;}
   .brkrow{display:flex;align-items:center;gap:10px;padding:7px 0;}
+  /* an activity the window has but this bucket does not */
+  .brkrow.nil{opacity:.4;}
   .brkrow .dot{width:8px;height:8px;border-radius:2px;flex:none;}
   .brkrow .nm{
     font-family:var(--display);text-transform:uppercase;letter-spacing:.1em;
@@ -348,10 +350,33 @@
   }
   .bars{display:flex;align-items:flex-end;gap:7px;height:150px;margin-bottom:8px;}
   .bars div{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;}
+  .bars .stack{display:flex;flex-direction:column;justify-content:flex-end;
+    height:calc(100% - 17px);}
   .bars i{display:block;min-height:2px;border-radius:1px;}
   .bars i.ph{background:var(--physical);}
   .bars i.mt{background:var(--mental);}
   .bars i.none{background:var(--line);}
+  /* a tapped bar keeps its colour and its size; the rest step back */
+  .bars .col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;
+    background:none;border:0;padding:0;position:relative;pointer-events:none;}
+  .bars .col .hit{position:absolute;left:0;right:0;bottom:0;pointer-events:auto;}
+  /* Enough to recede, not enough to erase: at .3 the other six bars went
+     pale and their value labels became unreadable, which took the
+     comparison away at the moment you asked about it. */
+  .bars .col.off{opacity:.45;}
+  .bars .col.on b{color:var(--text);}
+  .axis span.on{color:var(--text);font-weight:700;}
+  /* the tapped bucket's header, in the row the window total had */
+  /* Margins tuned so this row's footprint equals the totals line it
+     replaces: 16 - 10 + 18 = 24px, the same as 14 - 10 + 20. Without
+     that the chart slid under your finger the moment you tapped a bar
+     in it — and it moved again when the close button came out, since
+     that button was what had been setting this row's height. */
+  .pickHead{display:flex;align-items:center;gap:10px;margin:-10px 0 18px;}
+  .pickHead .lb{font-family:var(--display);text-transform:uppercase;letter-spacing:.06em;
+    font-size:13px;font-weight:700;}
+  .pickHead .amt{font-family:var(--display);text-transform:uppercase;letter-spacing:.06em;
+    font-size:13px;color:var(--text-dim);}
   .bars b{font-family:var(--mono);font-size:10px;color:var(--text-dim);text-align:center;font-weight:400;margin-bottom:5px;min-height:12px;}
   .axis{display:flex;gap:7px;margin-bottom:10px;}
   .axis span{flex:1;text-align:center;font-family:var(--display);font-size:11px;letter-spacing:.08em;color:var(--text-dim);text-transform:uppercase;}
@@ -417,8 +442,8 @@
           <button class="chip" data-v="months" aria-pressed="false">Months</button>
         </div>
         <div class="seg" id="statMeas">
-          <button data-m="count" aria-pressed="true">Sessions</button>
-          <button data-m="time" aria-pressed="false">Time</button>
+          <button data-m="count" aria-pressed="false">Sessions</button>
+          <button data-m="time" aria-pressed="true">Time</button>
         </div>
       </div>
       <div id="statNav"></div>
@@ -817,7 +842,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '14.4';
+const APP_VERSION = '15.0';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -3099,7 +3124,10 @@ document.addEventListener('visibilitychange', async ()=>{
 });
 
 /* ══ stats ═════════════════════════════════════════════════════ */
-let statMeasure = 'count';
+/* Time, not count. A session you cut short at ten minutes still counts
+   as one, so the count says you turned up and the clock says how much
+   you actually did — and the second is the more useful of the two. */
+let statMeasure = 'time';
 let statView = 'days', statOffset = 0, statType = 'all', statTask = 'all';
 
 /* Consistency is the spine: whether it happened, and whether it kept
@@ -3132,7 +3160,7 @@ function currentStreak(sel){
   while(days.has(d.getTime())){ n++; d = addDays(d, -1); }
   return n;
 }
-function totalsBlock(list, streakSel){
+function totalsBlock(list, streakSel, quiet){
   const body = list.filter(s=>s.category === 'physical');
   const mind = list.filter(s=>s.category === 'mental');
   const days = new Set(list.map(s=>dayStart(s.start).getTime())).size;
@@ -3143,7 +3171,7 @@ function totalsBlock(list, streakSel){
       ${tileHTML(days, 'Days trained', true)}
       ${tileHTML(streak, 'Day streak', true)}
     </div>
-    ${!list.length ? '' : statType !== 'all'
+    ${!list.length || quiet ? '' : statType !== 'all'
       ? `<p class="adh" style="margin:-10px 0 20px"><b>${hhmm(total)}</b> total</p>`
       : `<p class="adh" style="margin:-10px 0 20px">
       <b>${hhmm(total)}</b> total · body <b>${hhmm(body.reduce((n,s)=>n+s.dur,0))}</b>
@@ -3153,19 +3181,54 @@ const EFFORTS = {easy:'Easy', moderate:'Moderate', hard:'Hard'};
 /* What body and mind time was actually made of. The two-colour bars
    stay two colours — this answers the other question without turning
    a 7px bar into a rainbow. Only types with sessions appear. */
-function typeBreakdown(list){
+/* These rows follow the Sessions/Time switch like the bars do. Left on
+   time alone, tapping a bar labelled "19" handed back a header reading
+   11h 36m — the same kind of mislabelling the chart caption used to do. */
+const brkAmount = s => statMeasure === 'time' ? (s.dur || 0) : 1;
+const brkLabel  = n => statMeasure === 'time' ? hhmm(n) : String(n);
+
+/* `keepSingle` is for a tapped bucket. Over a whole window one row says
+   nothing the tiles have not, but "all of that day was Muay Thai" is a
+   genuine answer to what the day was made of. */
+/* `seed` lists the activities the whole window holds, so a tapped bucket
+   draws a row for each of them whether or not you did it that day. Two
+   reasons: the block keeps its height, so the chart does not slide out
+   from under the finger that tapped it; and tapping along the bars
+   leaves every row in place, with only the numbers changing, which is
+   what makes one bucket readable against the next. A day you did one of
+   four things says so, which is itself an answer. */
+const brkSums = list => {
   const by = {};
-  list.forEach(s=>{ by[s.type] = (by[s.type] || 0) + s.dur; });
-  const rows = Object.keys(by).map(k=>({sec:by[k], t:typeOf(k)}))
-                     .sort((a,b)=>b.sec - a.sec);
-  if(rows.length < 2) return '';
-  const peak = rows[0].sec;
+  list.forEach(s=>{ by[s.type] = (by[s.type] || 0) + brkAmount(s); });
+  return by;
+};
+/* The window's activities, biggest first — the order every breakdown
+   uses, so a bucket's rows land where the window's did. */
+const brkOrder = by => Object.keys(by).sort((a,b)=>by[b] - by[a]);
+
+function typeBreakdown(list, keepSingle, seed, scale){
+  const by = {};
+  (seed || []).forEach(t=>{ by[t] = 0; });
+  list.forEach(s=>{ by[s.type] = (by[s.type] || 0) + brkAmount(s); });
+  const rows = Object.keys(by).map(k=>({sec:by[k], key:k, t:typeOf(k)}));
+  /* Seeded: hold the window's order, so tapping from bar to bar changes
+     the numbers and never the rows. Unseeded: biggest first. */
+  if(seed && seed.length) rows.sort((a,b)=>seed.indexOf(a.key) - seed.indexOf(b.key));
+  else rows.sort((a,b)=>b.sec - a.sec);
+  if(rows.length < (keepSingle ? 1 : 2)) return '';
+  /* A bucket's tracks are measured against the WINDOW's biggest row, not
+     against its own: filled to the brim either way, the track said the
+     same thing before and after a tap. Scaled to the window it reads as
+     this bucket's share of the whole, and the rows still sit in
+     proportion to each other, since one number scales them all. */
+  const peak = scale || Math.max(1, ...rows.map(r=>r.sec));
   return `<div class="brk">` + rows.map(r=>`
-    <div class="brkrow">
+    <div class="brkrow${r.sec ? '' : ' nil'}">
       <span class="dot" style="background:${r.t.accent}"></span>
       <span class="nm">${esc(r.t.name)}</span>
-      <span class="tr"><i style="width:${Math.max(3,(r.sec/peak)*100)}%;background:${r.t.accent}"></i></span>
-      <span class="amt">${hhmm(r.sec)}</span>
+      <span class="tr">${r.sec
+        ? `<i style="width:${Math.max(3,(r.sec/peak)*100)}%;background:${r.t.accent}"></i>` : ''}</span>
+      <span class="amt">${r.sec ? esc(brkLabel(r.sec)) : '—'}</span>
     </div>`).join('') + `</div>`;
 }
 /* Opening a past session always means editing it, never just viewing.
@@ -3239,7 +3302,7 @@ function statWindow(){
       return {from, to: addDays(from, 7), label: (from.getMonth()+1) + '/' + from.getDate()};
     });
     return {buckets, from:first, to:addDays(end,7),
-            title: `${dDay(first)} – ${dDay(addDays(end,6))}`, foot:'Sessions per week'};
+            title: `${dDay(first)} – ${dDay(addDays(end,6))}`};
   }
   if(statView === 'months'){
     const base = monthStart(now); base.setMonth(base.getMonth() + statOffset);
@@ -3249,7 +3312,7 @@ function statWindow(){
               label: from.toLocaleDateString([], {month:'short'})};
     });
     return {buckets, from:buckets[0].from, to:buckets[6].to,
-            title: `${buckets[0].label} – ${buckets[6].label}`, foot:'Sessions per month'};
+            title: `${buckets[0].label} – ${buckets[6].label}`};
   }
   const a = addDays(weekStart(now), statOffset*7);
   const buckets = [...Array(7)].map((_,i)=>{
@@ -3259,7 +3322,7 @@ function statWindow(){
   return {buckets, from:a, to:addDays(a,7),
           title: statOffset === 0 ? 'This week' : statOffset === -1 ? 'Last week'
                  : `${dDay(a)} – ${dDay(addDays(a,6))}`,
-          foot:'Sessions per day', week:true};
+          week:true};
 }
 
 /* "All" means training. Three checkmarks a day would otherwise swamp
@@ -3282,7 +3345,13 @@ const ofTask = list => statTask === 'all'
 /* Counting sessions says you turned up; counting minutes says how much
    of the session you actually did. A round you cut short at ten minutes
    still counts as one, so the two measures disagree in a useful way. */
-function chartHTML(w, pick, groupBy){
+/* Which bucket is open, as an index into the window's seven. Cleared by
+   anything that changes what the buckets mean — a different grain, a
+   different window, a different filter — because a header naming a week
+   that is no longer on screen is worse than no header. */
+let statPick = null;
+
+function chartHTML(w, pick, groupBy, measure, tappable){
   /* bars normally split by activity; 'category' splits them by side so
      Body and Mind can be read against each other */
   const byCat = groupBy === 'category';
@@ -3292,7 +3361,10 @@ function chartHTML(w, pick, groupBy){
     : typeOf(k).accent;
   const order = k => byCat ? (k === 'mental' ? 0 : 1)
                            : (typeOf(k).category === 'mental' ? 0 : 1);
-  const byTime = statMeasure === 'time';
+  /* Callers can pin the measure. Upkeep does, because a tick has no
+     duration: with Time selected the whole chart flattened to nothing
+     while the tiles above it still read eight checks. */
+  const byTime = (measure || statMeasure) === 'time';
   const amount = x => byTime ? Math.max(0, x.dur || 0) / 60 : 1;
   const cols = w.buckets.map(b=>{
     const inB = pick(sessionsIn(b.from, b.to));
@@ -3305,14 +3377,43 @@ function chartHTML(w, pick, groupBy){
                         : (total || '')};
   });
   const peak = Math.max(byTime ? 30 : 3, ...cols.map(c=>c.count));
-  const bars = cols.map(c=>{
+  /* A whole bar is the hit target, never a segment: the thin slice is
+     always the interesting one and always the one you cannot hit. The
+     bar also answers the better question — what that bucket was made
+     of, rather than how much of one activity was in it. */
+  const bars = cols.map((c, i)=>{
     const segs = Object.keys(c.byType)
       .sort((x,y)=>order(x)-order(y) || x.localeCompare(y))
       .map(t=>`<i style="height:${(c.byType[t]/peak)*100}%;background:${tint(t)}"></i>`).join('');
-    return `<div><b>${c.cap}</b>${segs || '<i class="none" style="height:1%"></i>'}</div>`;
+    /* The segments live in a box of their own, sized to the column minus
+       the label. Sized against the whole column instead, a 100% bar had
+       to shrink to fit beside its label while a 50% bar did not — so the
+       tallest bar was drawn short and the chart was not proportional. */
+    const body = `<b>${c.cap}</b><span class="stack">${
+      segs || '<i class="none" style="height:1%"></i>'}</span>`;
+    /* A bucket with no bar has nothing to break down, so it is not a
+       target — tapping a blank Monday opened an empty header. */
+    if(!tappable || !c.count) return `<div>${body}</div>`;
+    /* dim the others rather than outlining this one — a border would
+       change the bar's geometry, and the geometry is the measurement */
+    const cls = statPick === null ? '' : statPick === i ? ' on' : ' off';
+    /* The button has to stay full height — the segments are sized in
+       percentages and collapse without a definite parent — so the column
+       itself takes no pointer events and this strip does, rising from the
+       baseline to the bar's own height. Empty sky above a short bar now
+       belongs to no bar, and tapping it closes the selection. A 30px
+       floor keeps a 15-minute sliver reachable. */
+    /* Measured against the bar area, not the column: the value label
+       above it takes 12px plus a 5px margin, and counting that in left
+       the tallest bar reaching 17px higher than it draws. */
+    const hit = `<span class="hit" style="height:max(30px,calc((100% - 17px) * ${
+      (c.count / peak).toFixed(3)}))"></span>`;
+    return `<button class="col${cls}" data-bucket="${i}" aria-pressed="${statPick === i}"
+      aria-label="${esc(c.label)}${c.cap ? ', ' + esc(c.cap) : ''}">${body}${hit}</button>`;
   }).join('');
   return `<div class="bars">${bars}</div>
-    <div class="axis">${cols.map(c=>`<span>${esc(c.label)}</span>`).join('')}</div>`;
+    <div class="axis">${cols.map((c, i)=>
+      `<span${tappable && statPick === i ? ' class="on"' : ''}>${esc(c.label)}</span>`).join('')}</div>`;
 }
 
 const FUNNEL = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 4h14l-5.6 6.6V16l-2.8 1.4v-6.8L3 4z"/></svg>';
@@ -3338,26 +3439,81 @@ function exerciseSection(w){
     .map(c=>['cat:'+c.id, c.name]);
   /* the same sessions as All, but the bars split by side rather than by
      activity, so the two can be read against each other */
-  const both = cats.length > 1 ? [['cat:both','Body & Mind']] : [];
+  /* "vs", not "&": this is the one entry that narrows nothing. It shows
+     exactly the sessions All shows and only cuts the bars differently so
+     the two sides can be read against each other, and "&" described a
+     union — which is what All already is. */
+  const both = cats.length > 1 ? [['cat:both','Body vs Mind']] : [];
   const opts = [['all','All activities']].concat(both).concat(cats).concat(kinds.map(k=>[k, typeOf(k).name]));
   if(!opts.some(o=>o[0] === statType)) statType = 'all';
   const order = t => (typeOf(t).category === 'mental' ? 0 : 1);
   const shown = [...new Set(list.map(s=>s.type))].sort((x,y)=>order(x)-order(y) || x.localeCompare(y));
   const ad = w.week ? adherence(w.from, w.to) : null;
 
+  /* The breakdown rows already are a swatch-name-value list, so a tapped
+     bucket does not need a readout of its own: the same rows re-scope to
+     that bucket and the totals line above them becomes its header. The
+     page keeps its height and nothing below moves. */
+  const grouped = statType === 'all' || statType.startsWith('cat:');
+  /* Whether the bars can be tapped is a fact about the WINDOW — is this
+     chart stacked at all — and must not depend on what is currently
+     open. Deriving it from the open bucket's rows meant a day holding
+     one activity reported "not tappable", which cleared the selection
+     mid-render: the header stayed, the rows vanished, and the bars went
+     inert with nothing left able to close them. */
+  const tappable = grouped && !!typeBreakdown(list);
+  if(!tappable) statPick = null;
+  let bucket = statPick !== null ? w.buckets[statPick] : null;
+  let inBucket = bucket ? ofType(sessionsIn(bucket.from, bucket.to)) : null;
+  /* Switching Time/Sessions can empty the bar under an open bucket — a
+     session carrying sets but no clock has a count and no minutes. */
+  let pickSum = inBucket ? inBucket.reduce((n,x)=>n + brkAmount(x), 0) : 0;
+  if(bucket && !pickSum){ statPick = null; bucket = null; inBucket = null; }
+  const winBy = grouped ? brkSums(list) : null;
+  const brk = grouped
+    ? (bucket
+        ? typeBreakdown(inBucket, true, brkOrder(winBy),
+            Math.max(1, ...Object.keys(winBy).map(k=>winBy[k])))
+        : typeBreakdown(list))
+    : '';
+
   return sectionRow('Exercises', 'statType', opts, statType)
-    + totalsBlock(list, statType === 'all' ? 'training' : statType)
-    + (statType === 'all' || statType.startsWith('cat:') ? typeBreakdown(list) : '')
-    + (ad && ad.plan ? `<p class="adh">Planned sessions — <b>${ad.hit} of ${ad.plan}</b></p>` : '')
-    + chartHTML(w, ofType, statType === 'cat:both' ? 'category' : 'type')
+    + totalsBlock(list, statType === 'all' ? 'training' : statType, !!bucket)
+    + (bucket
+        /* No close button: the bar you tapped closes it, and so does a
+           tap anywhere off the chart. A ✕ was a third way to do what two
+           gestures already did, in a 30px target. */
+        ? `<div class="pickHead">
+            <span class="lb">${esc(bucketName(w, bucket))}</span>
+            <span class="amt">${esc(brkLabel(pickSum))}${
+              statMeasure === 'time' ? '' : ' session' + (inBucket.length === 1 ? '' : 's')}</span>
+          </div>`
+        : '')
+    + brk
+    + (ad && ad.plan && !bucket ? `<p class="adh">Planned sessions — <b>${ad.hit} of ${ad.plan}</b></p>` : '')
+    + chartHTML(w, ofType, statType === 'cat:both' ? 'category' : 'type', null, tappable)
+    /* No caption under the chart, and no swatch row either where the
+       breakdown rows carry the same swatches and names — that duplicate
+       was the row fighting for space, and four activities sat 19px from
+       wrapping. Body vs Mind keeps its swatches: there the bars are cut
+       by side while the rows list activities, so nothing else names
+       those two colours. */
     + (statType === 'cat:both'
         ? `<div class="key">${BALANCE_CATS.map(c=>
-            `<span><i style="background:${c.color}"></i>${esc(c.name)}</span>`).join('')}<span>${esc(w.foot)}</span></div>`
-        : '')
-    + (statType === 'cat:both' ? '' : `<div class="key">${shown.map(t=>
-        `<span><i style="background:${typeOf(t).accent}"></i>${esc(typeOf(t).name)}</span>`).join('')
-        }<span>${esc(w.foot)}</span></div>`)
+            `<span><i style="background:${c.color}"></i>${esc(c.name)}</span>`).join('')}</div>`
+        : !brk && shown.length
+          ? `<div class="key">${shown.map(t=>
+              `<span><i style="background:${typeOf(t).accent}"></i>${esc(typeOf(t).name)}</span>`).join('')}</div>`
+          : '')
     + listBlock('ex', 'Sessions', list);
+}
+
+/* The window's title names a range; one bucket inside it needs naming on
+   its own terms — a day, the week it starts, or the month. */
+function bucketName(w, b){
+  if(statView === 'weeks') return 'Week of ' + dDay(b.from);
+  if(statView === 'months') return b.from.toLocaleDateString([], {month:'long', year:'numeric'});
+  return dWeek(b.from);
 }
 
 /* A measurement is not additive — you cannot add Monday's 172 to
@@ -3562,8 +3718,15 @@ function upkeepSection(w){
         ${tileHTML(days, 'Days kept', true)}
         ${tileHTML(streak, 'Day streak', true)}
       </div>`
-    + chartHTML(w, ofTask)
-    + `<div class="key"><span><i style="background:var(--upkeep)"></i>Upkeep</span><span>${esc(w.foot)}</span></div>`
+    + chartHTML(w, ofTask, null, 'count')
+    /* The one caption worth keeping. Everywhere else it repeated the
+       controls; here it contradicts them on purpose — the header can
+       read Time while these bars count checks, and the line is how you
+       know that is deliberate rather than broken. "Checks", not
+       "sessions", to match the tile and the list below. */
+    + `<div class="key"><span><i style="background:var(--upkeep)"></i>Upkeep</span><span>${
+        esc('Checks per ' + (statView === 'days' ? 'day' : statView === 'weeks' ? 'week' : 'month'))
+      }</span></div>`
     + rows;
 }
 
@@ -3575,31 +3738,43 @@ function renderStats(){
   body.innerHTML = exerciseSection(w) + upkeepSection(w);
 
   const back = el('statBack'), fwd = el('statFwd');
-  if(back) back.onclick = ()=>{ statOffset--; renderStats(); };
+  if(back) back.onclick = ()=>{ statOffset--; statPick = null; renderStats(); };
   if(fwd){
     fwd.disabled = statOffset >= 0;
     fwd.style.opacity = statOffset >= 0 ? .3 : 1;
-    fwd.onclick = ()=>{ if(statOffset < 0){ statOffset++; renderStats(); } };
+    fwd.onclick = ()=>{ if(statOffset < 0){ statOffset++; statPick = null; renderStats(); } };
   }
 }
 
 el('statBody').addEventListener('click', e=>{
+  const bk = e.target.closest('[data-bucket]');
+  if(bk){
+    const i = +bk.dataset.bucket;
+    statPick = statPick === i ? null : i;   /* tapping it again closes it */
+    return renderStats();
+  }
+  /* Anywhere else on the page puts the bucket away. Cleared up here so
+     that whichever route below repaints picks it up, and a tap on bare
+     page gets a repaint of its own at the end. */
+  const closed = statPick !== null;
+  if(closed) statPick = null;
   const m = e.target.closest('[data-more]');
   if(m) return openSessionList(m.dataset.more);
   const u = e.target.closest('[data-upk]');
   if(u){ statTask = u.dataset.upk; return renderStats(); }
-  const b = e.target.closest('[data-sid]'); if(!b) return;
+  const b = e.target.closest('[data-sid]');
+  if(!b){ if(closed) renderStats(); return; }
   const rec = sessions.find(x=>String(x.start) === b.dataset.sid);
   if(rec) editSession(rec);
 });
 el('statBody').addEventListener('change', e=>{
-  if(e.target.id === 'statType'){ statType = e.target.value; renderStats(); }
+  if(e.target.id === 'statType'){ statType = e.target.value; statPick = null; renderStats(); }
   if(e.target.id === 'statTask'){ statTask = e.target.value; renderStats(); }
 });
 el('statTabs').addEventListener('click', e=>{
   const b = e.target.closest('.chip'); if(!b) return;
   setChips('statTabs', x=>x === b);
-  statView = b.dataset.v; statOffset = 0; renderStats();
+  statView = b.dataset.v; statOffset = 0; statPick = null; renderStats();
 });
 el('statMeas').addEventListener('click', e=>{
   const b = e.target.closest('button'); if(!b) return;
