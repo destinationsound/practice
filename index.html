@@ -842,7 +842,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '15.1';
+const APP_VERSION = '15.4';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -933,7 +933,9 @@ const TYPES = {
     ] : [
       [c.useRounds ? fmt(c.rounds*c.roundLen + (c.rounds-1)*c.breakLen) : '∞', 'Session length'],
       [c.rest+'s', 'Rest per combo'],
-      [Object.values(c.groups).filter(Boolean).length, 'Weapon groups'],
+      /* a cfg that arrived without groups — an old record, a hand-edited
+         import — used to take the whole detail screen down here */
+      [Object.values(c.groups || {}).filter(Boolean).length, 'Weapon groups'],
       [done, 'Times done']
     ],
     fields:[
@@ -1130,6 +1132,13 @@ const typeOf = id => TYPES[id] || TYPES.muaythai;
    under must not move with them: a heading that travels is a landmark
    you have to find again every time you open the app. */
 const typeRank = t => { const i = Object.keys(TYPES).indexOf(t); return i < 0 ? 99 : i; };
+/* Archiving hides an exercise from the places you START things — the
+   home list, the schedule, the manual log — and from nowhere else. The
+   record stays whole: its sessions keep counting in stats, its history
+   stays readable, and restoring it puts it back untouched. Deleting is
+   still there for things that were a mistake; this is for things that
+   were real and are over. */
+const isLive = e => !!e && !e.archived;
 const summaryOf = ex => ex.logOnly ? 'Logged by hand'
   : (typeOf(ex.type).summary ? typeOf(ex.type).summary(ex.cfg) : typeOf(ex.type).blurb);
 
@@ -1374,7 +1383,7 @@ const sides = () => S.stance === 'orthodox' ? {lead:'left', rear:'right'} : {lea
 const DAYNAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const DAYINIT  = ['S','M','T','W','T','F','S'];
 const scheduledOn = (ex, d) => !!(ex.sched && ex.sched.days && ex.sched.days.includes(d.getDay()));
-const plannedFor  = d => exercises.filter(e=>scheduledOn(e, d));
+const plannedFor  = d => exercises.filter(e=>isLive(e) && scheduledOn(e, d));
 function didOn(exId, d){
   const a = dayStart(d), b = addDays(a, 1);
   return sessions.some(s=>s.exerciseId === exId && inRange(s, a, b));
@@ -1615,6 +1624,13 @@ function openMetric(ex, day, rec){
 
     ${last ? `<p class="note" style="margin-top:24px">Last reading <b>${fmtVal(valueOf(last), step)}${unit ? ' ' + esc(unit) : ''}</b> on ${dWeek(last.start)}.</p>` : ''}
 
+    <h2 class="sec">Conditions</h2>
+    <textarea id="mxNote" maxlength="200"
+      placeholder="Optional — time of day, clothing, before or after water">${
+        esc(metricRec && metricRec.note || '')}</textarea>
+    <p class="note">A number on its own cannot tell you why it moved. Two pounds of
+      water, or a different time of day, looks exactly like two pounds.</p>
+
     <button class="primary" id="mxSave" style="margin-top:28px">${metricRec ? 'Save reading' : 'Add reading'}</button>
     ${metricRec ? '<button class="ghost danger" id="mxDel">Delete reading</button>' : ''}`;
 
@@ -1633,15 +1649,19 @@ function openMetric(ex, day, rec){
     }
     const start = new Date(y, mo-1, da, hh, mi).getTime();
     if(!isFinite(metricVal)) metricVal = 0;
+    const note = (el('mxNote').value || '').trim();
     if(metricRec){
       metricRec.start = start; metricRec.end = start;
       metricRec.detail = {value: metricVal, unit};
+      /* deleted rather than stored empty, so a record never carries a
+         blank field that import and export have to reason about */
+      if(note) metricRec.note = note; else delete metricRec.note;
       sessionsChanged();
       popOrigin();
     } else {
       commitSession(makeSession(metricEx, {
         start, dur: 0, source: metricDay ? 'manual' : 'app',
-        detail: {value: metricVal, unit}
+        detail: {value: metricVal, unit}, note
       }));
     }
   });
@@ -1960,7 +1980,7 @@ function renderHome(){
      listening to. Moved to mixing once; changing it in Settings sticks. */
   if(!G.audioMoved){ G.audioMode = 'ambient'; G.audioMoved = 1; }
   const sections = CATS.map(c=>{
-    const list = exercises.filter(e=>e.category === c.id);
+    const list = exercises.filter(e=>e.category === c.id && isLive(e));
     const head = `<h2 class="grp">${esc(c.name)}</h2>`;
     if(!list.length) return head + `<div class="nothing">Nothing here yet.</div>`;
     if(c.id === 'upkeep') return head + sortEx(list).map(exerciseRow).join('');
@@ -1980,6 +2000,27 @@ function renderHome(){
         </button>` + (folded ? '' : items.map(exerciseRow).join(''));
     }).join('');
   }).join('');
+
+  /* Folded by default and last on the page: it is a shelf, not a list
+     you work from. */
+  const shelved = sortEx(exercises.filter(e=>!isLive(e)));
+  /* The fold handler stores "this key is set" and deletes it to unset,
+     and every other group reads a set key as folded. The shelf wants the
+     opposite default, so the key names the OPEN state rather than the
+     folded one — no special case in the handler, and no seeding that
+     would slam it shut again on the very next render. */
+  const shelfKey = 'archivedOpen';
+  const shelfFolded = !G.folded[shelfKey];
+  const shelf = !shelved.length ? '' :
+    `<h2 class="grp">Archived</h2>
+     <button class="subgrp${shelfFolded ? ' folded' : ''}" data-fold="${shelfKey}"
+       aria-expanded="${!shelfFolded}">
+       <span class="tick" style="background:var(--text-dim)"></span>
+       <span class="nm">Not in use</span>
+       <span class="ct">${shelved.length}</span>
+       <span class="chev">${shelfFolded ? '›' : '⌄'}</span>
+     </button>` + (shelfFolded ? '' : shelved.map(exerciseRow).join(''));
+
   const sortBar = exercises.length > 4
     ? `<div class="sortBar"><div class="seg" id="exSort">
          <button data-s="recent" aria-pressed="${G.sort !== 'az'}">Recent</button>
@@ -1987,7 +2028,7 @@ function renderHome(){
        </div></div>`
     : '';
   el('homeBody').innerHTML = backupNag() + todayBlock() + balanceBlock() + sortBar + sections
-    + `<button class="addbtn" id="newEx">+ Add new</button>`;
+    + `<button class="addbtn" id="newEx">+ Add new</button>` + shelf;
 }
 el('homeBody').addEventListener('click', e=>{
   if(e.target.closest('#dayBack')){ if(dayOffset > DAY_BACK){ dayOffset--; renderHome(); } return; }
@@ -2146,6 +2187,7 @@ function openExercise(id, day){
     ${cur.logOnly ? '' : `<button class="ghost" id="logForEx">${
       esc(isMetric(cur) ? 'Add a past reading' : (t.logPastLabel || 'Log a past session'))}</button>`}
     ${t.detailExtra ? t.detailExtra(cur) : ''}
+    <button class="ghost" id="arcEx">${isLive(cur) ? 'Archive' : 'Put back in use'}</button>
     <button class="ghost danger" id="delEx">Delete</button>`;
   show('exercise');
 }
@@ -2167,6 +2209,11 @@ el('exerciseDetail').addEventListener('click', e=>{
        duration form instead — inventing a combo count would be fiction. */
     if(ty.logPast){ loadCfg(cur); return ty.logPast(logDay); }
     return openLog(cur.id, null);
+  }
+  if(e.target.closest('#arcEx')){
+    if(isLive(cur)) cur.archived = 1; else delete cur.archived;
+    saveEx(); renderHome();
+    return openExercise(cur.id, detailDay);
   }
   if(e.target.closest('#editEx')) openEditor(cur, false);
   if(e.target.closest('#dupEx')){
@@ -2567,25 +2614,15 @@ function tapVolumes(n, dir){
 }
 
 /* ══ meditation ════════════════════════════════════════════════ */
+/* Two or three, deliberately. A plan exists to get you started on day
+   one, and twenty-one of them was a maintenance bill paid on every
+   change to a config shape — three of the Muay Thai ones would not have
+   survived the circuits work at all. Start from one of your own, or
+   build from nothing; these are only for an empty library. */
 TYPES.muaythai.templates = [
   {name:'Technical rounds', blurb:'Set combos, clean execution, generous reset',
    cfg:{flow:'library', level:2, min:2, max:4, rest:6, gap:.15, rounds:5, roundLen:180,
         groups:{punch:true,kick:true,knee:true,elbow:false,defense:false}}},
-  {name:'Bag work', blurb:'Everything on, longer combos, short reset',
-   cfg:{flow:'mixed', level:2, min:3, max:6, rest:3, gap:.08, rounds:6, roundLen:180,
-        groups:{punch:true,kick:true,knee:true,elbow:true,defense:false}}},
-  {name:'Conditioning burn', blurb:'Short rounds, almost no rest, keep moving',
-   cfg:{flow:'mixed', level:2, min:3, max:6, rest:1.5, gap:.05, rounds:8, roundLen:120,
-        breakLen:30, groups:{punch:true,kick:true,knee:true,elbow:false,defense:false}}},
-  {name:'Kicks and knees', blurb:'Legs only — teeps, roundhouses, knees',
-   cfg:{flow:'free', level:2, min:2, max:4, rest:5, gap:.12, rounds:5, roundLen:180,
-        groups:{punch:false,kick:true,knee:true,elbow:false,defense:false}}},
-  {name:'Defence and counters', blurb:'Slips, rolls and checks folded into every combo',
-   cfg:{flow:'free', level:3, min:3, max:5, rest:5, gap:.1, rounds:5, roundLen:180,
-        groups:{punch:true,kick:true,knee:false,elbow:false,defense:true}}},
-  {name:'Shadow boxing', blurb:'Basics only, slow and deliberate',
-   cfg:{flow:'library', level:1, min:2, max:3, rest:7, gap:.2, rounds:3, roundLen:180,
-        groups:{punch:true,kick:true,knee:false,elbow:false,defense:false}}},
   {name:'Circuit', blurb:'A sequence you build — rope, bag work, counted sets',
    cfg:{shape:'circuit', blocks:[
      {kind:'timed',   label:'Jump rope', secs:180},
@@ -2598,10 +2635,7 @@ TYPES.muaythai.templates = [
 
 TYPES.meditate.templates = [
   {name:'Ten minutes',       blurb:'A short daily sit', cfg:{length:10, taps:5, interval:0, dim:true}},
-  {name:'Twenty minute sit', blurb:'Bell every five minutes to re-anchor', cfg:{length:20, taps:5, interval:5, dim:true}},
   {name:'Body scan',         blurb:'Half an hour, bell every ten', cfg:{length:30, taps:5, interval:10, dim:true}},
-  {name:'Evening wind-down', blurb:'Quiet, three taps, screen dark', cfg:{length:15, taps:3, interval:0, dim:true, volume:.4}},
-  {name:'Quick reset',       blurb:'Five minutes between other things', cfg:{length:5, taps:3, interval:0, dim:true}},
 ];
 
 TYPES.meditate.open = ()=>openMed();
@@ -3643,7 +3677,8 @@ const readingRows = (list, ex, step) => {
   return list.map(sv=>`
     <button class="sess" data-sid="${sv.start}">
       <div class="when">${esc(dWeek(sv.start))}
-        <small>${esc(dTime(sv.start))}</small></div>
+        <small>${esc(dTime(sv.start))}</small>
+        ${sv.note ? `<small class="detail">${esc(sv.note)}</small>` : ''}</div>
       <b>${esc(fmt(valueOf(sv)))}${unit ? ' ' + esc(unit) : ''}</b>
     </button>`).join('');
 };
@@ -3787,6 +3822,25 @@ const dateVal = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDat
 const timeVal = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 
 let logDay = null;
+/* Which recorded blocks were counted ones — the only part of a circuit
+   record that holds a number you might have missed. */
+const countedOf = s => (s && s.detail && Array.isArray(s.detail.blocks))
+  ? s.detail.blocks.map((b, i)=>({b, i})).filter(x=>x.b && x.b.kind === 'counted')
+  : [];
+
+function countedRows(existing){
+  const list = countedOf(existing);
+  if(!list.length) return '';
+  return `<h2 class="sec">Counted reps</h2>` + list.map(({b, i})=>`
+    <div class="field">
+      <label>${esc(b.label || 'Counted')}${
+        b.target ? ` · ${b.target} planned` : ''}${b.done ? '' : ' · skipped'}</label>
+      ${steprHTML('cnt' + i, b.count != null ? b.count : (b.target || 0),
+        {label: b.label || 'Counted reps', fmt:v=>String(Math.round(v))})}
+    </div>`).join('')
+    + `<p class="note">What you actually did. The plan said one thing; this is the record.</p>`;
+}
+
 function openLog(exId, existing, day){
   logDay = day || null;
   logKey = existing ? existing.start : null;
@@ -3796,6 +3850,7 @@ function openLog(exId, existing, day){
      nothing in it. Its own record stays selectable so an older entry is
      not mislabelled as deleted. */
   const pool = exercises.filter(e=>typeOf(e.type).ready
+    && (isLive(e) || (existing && existing.exerciseId === e.id))
     && (!isMetric(e) || (existing && existing.exerciseId === e.id)));
   /* A session outlives its exercise on purpose. Keep it selectable so
      it can still be corrected or deleted, and never let it silently
@@ -3834,6 +3889,8 @@ function openLog(exId, existing, day){
       <div><input type="date" id="logDate" value="${dateVal(when)}"></div>
       <div><input type="time" id="logTime" value="${timeVal(when)}"></div>
     </div>
+
+    ${countedRows(existing)}
 
     ${!wantsTime ? '' : `<h2 class="sec">How long</h2>
     <div class="chips" id="logQuick">
@@ -3874,6 +3931,14 @@ function openLog(exId, existing, day){
     });
   }
 
+  /* one stepper per counted block, each holding its own value */
+  const counts = {};
+  countedOf(existing).forEach(({b, i})=>{
+    counts[i] = b.count != null ? b.count : (b.target || 0);
+    wireStepr('cnt' + i, ()=>counts[i], v=>{ counts[i] = v; },
+      {min:0, max:9999, step:1, fmt:v=>String(Math.round(v))});
+  });
+
   el('logSave').addEventListener('click', ()=>{
     const [y,mo,d] = el('logDate').value.split('-').map(Number);
     const [hh,mm] = el('logTime').value.split(':').map(Number);
@@ -3886,6 +3951,7 @@ function openLog(exId, existing, day){
     if(existing){
       /* Only the timing and the notes are editable here; the exercise
          it belongs to is never reassigned behind your back. */
+      countedOf(existing).forEach(({b, i})=>{ b.count = Math.max(0, Math.round(counts[i])); });
       Object.assign(existing, {
         start, end: start + minutes*60000, dur: minutes*60, effort, note
       });
@@ -4146,8 +4212,11 @@ const SEED = [
   ['dip',        'Dip',                   'push', 'level', ['Bench','Band assisted','Standard','Weighted']],
   ['pike',       'Pike Push-up',          'push', 'level', ['Knee','Standard','Feet elevated','Handstand']],
   // pull
-  ['pullup',     'Pull-up',               'pull', 'level', ['Band assisted','Negative','Standard','Weighted']],
-  ['chinup',     'Chin-up',               'pull', 'level', ['Band assisted','Negative','Standard','Weighted']],
+  /* Kipping sits between Negative and Standard: a negative has no
+     concentric at all, a kip has a full one with the hips paying part of
+     the bill. More of a rep than a negative, less than strict. */
+  ['pullup',     'Pull-up',               'pull', 'level', ['Band assisted','Negative','Kipping','Standard','Weighted']],
+  ['chinup',     'Chin-up',               'pull', 'level', ['Band assisted','Negative','Kipping','Standard','Weighted']],
   ['inv-row',    'Inverted Row',          'pull', 'level', ['High bar','Standard','Feet elevated','Weighted']],
   ['pulldown',   'Lat Pulldown',          'pull', 'weight'],
   ['bb-row',     'Barbell Row',           'pull', 'weight'],
@@ -4198,6 +4267,24 @@ if(MOVES === null){
   write(K_MOVE, MOVES);
 }
 const saveMoves = ()=>write(K_MOVE, MOVES);
+
+/* A ladder is stored, so a change to SEED reaches a fresh install only.
+   Levels are kept as strings and resolved with indexOf, so inserting a
+   rung shifts no recorded set — the lookups re-resolve against the new
+   list. Guarded by name so it runs once and never fights a ladder the
+   user has since edited. */
+(function addKipping(){
+  let moved = false;
+  ['pullup','chinup'].forEach(id=>{
+    const m = MOVES.find(x=>x.id === id);
+    if(!m || !m.ladder || m.ladder.indexOf('Kipping') >= 0) return;
+    const at = m.ladder.indexOf('Standard');
+    if(at < 0) return;                       /* renamed; leave it alone */
+    m.ladder.splice(at, 0, 'Kipping');
+    moved = true;
+  });
+  if(moved) saveMoves();
+})();
 const moveOf = id => MOVES.find(m=>m.id === id) || {id, name:'Unknown', group:'push', measure:'weight', ladder:null};
 const isWeighted = lvl => /weighted/i.test(lvl || '');
 /* Loads are stored in pounds and converted only for display, so
@@ -4214,10 +4301,16 @@ const T = TYPES.strength;
 T.ready = true;
 T.blurb = 'Sets, reps, push pull legs';
 T.defaults = ()=>({rest:90, items:[]});
+/* Focus first. "2 movements · 6 sets · 90s rest" is the machinery, and
+   it reads nearly the same on every row, so the title was carrying the
+   whole job of telling two workouts apart. The groups are already
+   derived for the detail screen; they belong where you scan. */
 T.summary = c=>{
   if(!c.items || !c.items.length) return 'No movements yet';
   const sets = c.items.reduce((n,i)=>n+i.sets, 0);
-  return `${c.items.length} movement${c.items.length===1?'':'s'} · ${sets} sets · ${c.rest}s rest`;
+  const focus = [...new Set(c.items.map(i=>moveOf(i.movementId).group))]
+    .map(g=>(GROUPS.find(x=>x[0] === g) || ['','?'])[1]);
+  return `${focus.join(' · ') || '—'} — ${sets} set${sets===1?'':'s'}`;
 };
 T.facts = (c,done)=>{
   const sets = (c.items||[]).reduce((n,i)=>n+i.sets, 0);
@@ -4354,7 +4447,12 @@ EXPORTERS.movements = {
    workout it appears in. "Previous" stays scoped to one workout
    because order and rest change what you can lift; history is not,
    because your best bench is your best bench. */
-const histScreen = makeScreen('mvhist', {title:'History'});
+/* The id has to match what openHistory writes to. It did not: makeScreen
+   names the scroll box after the screen — mvhistBody — while the render
+   reached for histBody, so tapping a movement in the strength editor
+   threw and showed the error overlay instead of its history. Every
+   version until now. */
+makeScreen('mvhist', {title:'History', html:'<div class="scroll" id="histBody"></div>'});
 let histFrom = 'lift';
 
 const rungIndex = (m, lvl) => m.ladder ? Math.max(0, m.ladder.indexOf(lvl)) : 0;
@@ -4373,12 +4471,6 @@ function bestSet(m, sets){
     } else if(st.reps > best.reps) best = st;
   }
   return best;
-}
-function setText(m, st){
-  if(!st) return '—';
-  if(m.measure === 'time') return `${st.reps}s`;
-  if(m.measure === 'level') return `${st.reps} × ${esc(st.level || '—')}${st.load ? ` +${fromLb(st.load)}` : ''}`;
-  return `${st.reps} × ${fromLb(st.load)} ${unitName().toLowerCase()}`;
 }
 function movementHistory(mid){
   const rows = [];
@@ -4409,8 +4501,8 @@ function openHistory(mid, from){
       <i class="ph" style="height:${Math.max(4, (metric(x.top)/peak)*100)}%"></i></div>`).join('');
 
   const facts = [
-    [rows.length ? setText(m, tops[0].top) : '—', 'Last top set'],
-    [allTime ? setText(m, allTime) : '—', m.measure === 'level' ? 'Best rung' : 'Best set'],
+    [rows.length ? setText(tops[0].top, m) : '—', 'Last top set'],
+    [allTime ? setText(allTime, m) : '—', m.measure === 'level' ? 'Best rung' : 'Best set'],
   ];
   if(m.measure === 'weight') facts.push([allTime ? fromLb(e1rm(allTime)) : '—', 'Best est. 1RM']);
   facts.push([rows.length, 'Sessions']);
@@ -4431,11 +4523,19 @@ function openHistory(mid, from){
       <div class="sess">
         <div class="when">${esc(r.name)}
           <small>${dWeek(r.start)} · ${
-            r.sets.map(st=>setText(m, st)).join(' · ')}</small>
+            r.sets.map(st=>setText(st, m)).join(' · ')}</small>
         </div>
       </div>`).join('')}`;
   show('mvhist');
 }
+
+/* A movement's ladder is not editable here, on purpose. Changing a
+   stored one would fork it from the shipped catalogue permanently — no
+   route back to the default, and no shipped improvement ever reaching
+   it again, which is why adding the Kipping rung needed a hand-written
+   migration rather than a seed edit. The way in is a catalogue plus a
+   per-movement override, and that belongs in the Swift storage design
+   rather than retrofitted here. Until then: no editing. */
 
 BACKTO.pick = 'editor';   // the picker returns to the editor, draft intact
 TITLES.lift = 'Workout';
@@ -4476,10 +4576,16 @@ function rowSpot(sets, si){
   }
   return {c, d};
 }
+/* One of these, not two. There were two — same name, opposite argument
+   order — and the later declaration quietly won, so every call in the
+   movement history passed (movement, set) into a function reading
+   (set, movement) and printed "0 × lbs" for everything. The crash from
+   the wrong element id had been hiding it. Rung names are typed by
+   hand and this result goes straight into innerHTML, so it escapes. */
 function setText(s, m){
   if(!s) return '—';
-  if(m.measure === 'time') return `${s.reps || 0}s${s.level ? ' '+s.level : ''}`;
-  if(m.measure === 'level') return `${s.reps||0} × ${s.level||'—'}${s.load?` +${fromLb(s.load)}`:''}`;
+  if(m.measure === 'time') return `${s.reps || 0}s${s.level ? ' ' + esc(s.level) : ''}`;
+  if(m.measure === 'level') return `${s.reps||0} × ${esc(s.level||'—')}${s.load?` +${fromLb(s.load)}`:''}`;
   return `${s.reps||0} × ${fromLb(s.load)} ${unitName().toLowerCase()}`;
 }
 /* A main row shows last time's matching set and trails its drops after
@@ -4661,24 +4767,6 @@ const W = (id, sets, rest) => ({movementId:id, sets, rest:rest||null});
 T.templates = [
   {name:'Full body', blurb:'Everything in one session',
    cfg:{rest:90, items:[W('squat',3),W('bench',3),W('bb-row',3),W('ohp',3),W('rdl',3),W('plank',3,60)]}},
-
-  {name:'Push day', blurb:'Chest, shoulders and triceps',
-   cfg:{rest:90, items:[W('bench',4),W('ohp',3),W('inc-db',3),W('lat-raise',3,60),W('pushdown',3,60),W('oh-tri',3,60)]}},
-
-  {name:'Pull day', blurb:'Back and biceps',
-   cfg:{rest:90, items:[W('pullup',4),W('bb-row',4),W('cable-row',3),W('face-pull',3,60),W('bb-curl',3,60),W('hammer',3,60)]}},
-
-  {name:'Leg day', blurb:'Quads, hamstrings, glutes and calves',
-   cfg:{rest:120, items:[W('squat',4),W('rdl',3),W('leg-press',3),W('leg-curl',3,60),W('calf',4,45),W('bulgarian',3)]}},
-
-  {name:'Upper body', blurb:'Pushing and pulling in the same session',
-   cfg:{rest:90, items:[W('bench',4),W('bb-row',4),W('ohp',3),W('pulldown',3),W('db-curl',3,60),W('pushdown',3,60)]}},
-
-  {name:'Dumbbells only', blurb:'Everything with a pair of dumbbells',
-   cfg:{rest:75, items:[W('db-bench',3),W('db-row',3),W('db-ohp',3),W('goblet',3),W('lunge',3),W('db-curl',3,60)]}},
-
-  {name:'Bodyweight', blurb:'No equipment, progression by level',
-   cfg:{rest:60, items:[W('pushup',3),W('pullup',3),W('bw-squat',3),W('dip',3),W('plank',3),W('hlr',3)]}},
 
   {name:'Gym session', blurb:'Training you log by hand afterwards', logOnly:true, cfg:{}},
 ];
@@ -5845,6 +5933,14 @@ TYPES.muaythai.runCircuit = async function(tok){
        than logging it twice. done stays false until it reaches its own
        end, so a skipped block is recorded as skipped. */
     live.blocks[i] = {kind:b.kind, label:b.label, done:false};
+    /* A counted block only ever stored its target, so "100 reps" was a
+       plan the record could not contradict. Carry the target and assume
+       you hit it — one tap mid-workout, correctable afterwards, rather
+       than a number to type with gloves on. */
+    if(b.kind === 'counted'){
+      live.blocks[i].target = +b.target || 0;
+      live.blocks[i].count  = +b.target || 0;
+    }
     el('phase').textContent = `${i+1} of ${blocks.length} · ${b.label}`;
     bell(1);
     await say(b.label);
