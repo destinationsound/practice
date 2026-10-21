@@ -606,6 +606,18 @@ const CAT = [
   {k:'rearParry',     g:'defense', side:'none', lvl:1, w:3, open:1.6, close:.4, r:2.0, xr:1.9, label:L=>`${L.rear} parry`},
   {k:'leadCheck',     g:'defense', side:'none', lvl:1, w:3, open:1.8, close:.5, r:2.5, xr:2.4, label:L=>`${L.lead} check`},
   {k:'rearCheck',     g:'defense', side:'none', lvl:1, w:3, open:1.8, close:.5, r:2.5, xr:2.4, label:L=>`${L.rear} check`},
+  /* A cross check answers a kick with the far leg, lifted across the
+     centreline instead of the near shin. Named for the leg that does the
+     checking, like the parries and the plain checks above, so the lead
+     cross check is the lead leg travelling across. Harder than a plain
+     check — one leg, hips turned, momentarily crossed up — so lvl 2 and
+     a third of the weight: real, but not a staple. Range is left at a
+     plain check's 2.4 on purpose. You end turned rather than further
+     away, and inflating it to spend the cost of being crossed up would
+     only suppress every follow-up evenly instead of the ones the turn
+     actually takes away; that cost is in close and w instead. */
+  {k:'leadCrossCheck', g:'defense', side:'none', lvl:2, w:1.5, open:1.4, close:.4, r:2.5, xr:2.4, label:L=>`${L.lead} cross check`},
+  {k:'rearCrossCheck', g:'defense', side:'none', lvl:2, w:1.5, open:1.4, close:.4, r:2.5, xr:2.4, label:L=>`${L.rear} cross check`},
   {k:'leadHeadBlock', g:'defense', side:'none', lvl:1, w:2, open:1.4, close:.5, r:1.8, xr:1.8, label:L=>`${L.lead} head block`},
   {k:'rearHeadBlock', g:'defense', side:'none', lvl:1, w:2, open:1.4, close:.5, r:1.8, xr:1.8, label:L=>`${L.rear} head block`},
   {k:'leadBodyBlock', g:'defense', side:'none', lvl:2, w:1, open:1.3, close:.5, r:2.2, xr:2.2, label:L=>`${L.lead} body block`},
@@ -673,6 +685,16 @@ const LINK = {
   rearParry:     {leadHook:2.4, jab:1.9, switchKick:1.6, leadUpper:1.4, leadKnee:1.2},
   leadCheck:     {rearLow:2.6, cross:1.9, rearBody:1.7, jab:1.5, leadHook:1.4},
   rearCheck:     {leadHook:2.2, jab:1.9, switchKick:1.8, leadTeep:1.4, cross:1.3},
+  /* Crossing over lands you on the wrong foot, so the answers are the
+     ones that unwind the turn rather than fight it. The lead leg comes
+     down across the centreline, which is already most of a switch, so a
+     switch kick is a continuation rather than a new idea; the rear leg
+     is up and loaded, so it comes back down as a kick. Pivot and step
+     back are here but stay low — defence following defence is cut hard
+     a few lines down, which is the right rule, so these are the rare
+     reset rather than a reliable one. */
+  leadCrossCheck: {leadHook:2.1, switchKick:1.8, pivot:1.7, jab:1.3, stepBack:1.2, cross:1.1},
+  rearCrossCheck: {rearLow:2.1, cross:1.8, pivot:1.6, rearBody:1.4, stepBack:1.2, leadHook:1.1},
   leadHeadBlock: {cross:2.4, rearHook:1.9, rearBody:1.8, rearKnee:1.4},
   rearHeadBlock: {leadHook:2.4, jab:1.9, switchKick:1.6, leadKnee:1.4},
   leadBodyBlock: {cross:2.2, rearLow:1.9, rearKnee:1.6},
@@ -707,6 +729,8 @@ const LIB = [
   {lvl:2, k:['jab','crossBody','leadInWrist','rearElbow']},
   {lvl:1, k:['leadCheck','rearLow']},
   {lvl:1, k:['rearCheck','leadHook']},
+  {lvl:2, k:['rearCrossCheck','rearLow']},
+  {lvl:2, k:['leadCrossCheck','leadHook','rearBody']},
   {lvl:1, k:['jab','cross','rearKnee']},
   {lvl:1, k:['rearLow','jab','cross']},
   {lvl:1, k:['jab','cross','switchKick']},
@@ -842,7 +866,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '15.4';
+const APP_VERSION = '15.5';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -1375,7 +1399,11 @@ const comboFromIds = ids => (ids || []).map(strikeById).filter(Boolean);
 const WORDS = {'1':'one','2':'two','3':'three','4':'four','5':'five','6':'six'};
 const circuitLength = c => (c.blocks||[]).reduce((n,b)=>n + (b.kind==='counted' ? 90 : (b.secs||0)), 0);
 const spoken = (t,L) => (G.callouts === 'numbers' && t.num) ? (t.nsay || WORDS[t.num]) : t.label(L);
-const sides = () => S.stance === 'orthodox' ? {lead:'left', rear:'right'} : {lead:'right', rear:'left'};
+const sidesOf = st => st === 'orthodox' ? {lead:'left', rear:'right'} : {lead:'right', rear:'left'};
+/* S is the running session's settings, so sides() is right in a runner
+   and wrong anywhere that is looking at an exercise instead. Screens in
+   that second group resolve from the config they are showing. */
+const sides = () => sidesOf(S.stance);
 
 /* A schedule is an intention, not a scoreboard. Home shows what is
    planned and what is done; days you missed simply stay empty there.
@@ -5841,7 +5869,14 @@ window.openBlock = function(cfg, i){
 };
 
 /* ── building a combo from the catalogue ────────────────────── */
-const comboText = ids => comboFromIds(ids).map(t=>t.label(sides())).join(' · ') || '—';
+/* The combo screens are editing an exercise, not running one, so their
+   labels come from that exercise's stance. They used sides(), which
+   reads the live S — the module default, southpaw, until something has
+   actually run — so an orthodox circuit listed a rear low kick as
+   "left low kick" and every sided move in the editor was mirrored.
+   Only the label was ever wrong; the stored key is a side-free name. */
+const cmbSides = () => sidesOf((blkCfg || S).stance);
+const comboText = ids => comboFromIds(ids).map(t=>t.label(cmbSides())).join(' · ') || '—';
 let cmbBlock = null, cmbIndex = -1, cmbDraft = [];
 
 function openCombo(block, ci){
@@ -5866,7 +5901,7 @@ function paintCurrent(){
     : '<em>Tap strikes to build the combo</em>';
 }
 function paintCombo(){
-  const L = sides();
+  const L = cmbSides();
   const groups = [['punch','Punches'],['kick','Kicks'],['knee','Knees'],['elbow','Elbows'],['defense','Defence']];
   el('comboBody').innerHTML =
     groups.map(([g,label])=>`
