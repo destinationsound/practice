@@ -866,7 +866,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '15.5';
+const APP_VERSION = '15.6';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -6526,6 +6526,418 @@ renderMeals();
 })();
 /* ╔══════════════════════════════════════════════════════════════╗
    ║  MEALS MODULE — END                                          ║
+   ╚══════════════════════════════════════════════════════════════╝ */
+
+/* ╔══════════════════════════════════════════════════════════════╗
+   ║  NOISE MODULE — START                                        ║
+   ║  Remove this block and the app loses the Sleep sound screen  ║
+   ║  and its row in Settings, and nothing else. It writes no      ║
+   ║  sessions, touches no exercise, and runs on its own audio     ║
+   ║  context so nothing it does can reach the bells.             ║
+   ╚══════════════════════════════════════════════════════════════╝ */
+(function(){
+/* A second AudioContext rather than the app's actx and audioOut(),
+   deliberately. The only reliable way back from an output-route change
+   — AirPlay, Bluetooth, headphones pulled out — is to close the context
+   and build another, because a context is fixed to the sample rate it
+   was created at. Doing that to the shared one would take the bells,
+   the callouts and the rope down with it. The cost is one extra context
+   while this plays, and it is closed on stop.
+
+   Nothing here is a practice, so nothing here records a session. It is
+   a utility that happens to live in the same app. */
+
+if(!G.noise || typeof G.noise !== 'object') G.noise = {};
+const N = Object.assign({shape:'band', f0:500, q:1.0, vol:0.55}, G.noise);
+const saveN = ()=>{ G.noise = N; saveGlobal(); };
+
+const SHAPES = [['band','Band'],['tilt','Tilt'],['pink','Pink'],
+                ['brown','Brown'],['white','White']];
+const BASE = {band:'white', tilt:'pink', pink:'pink', brown:'brown', white:'white'};
+const NOTE = {
+  band:'White noise through a bandpass — only the middle survives. The usual technical reading of green noise.',
+  tilt:'Pink noise with a lift at the centre. Keeps the lows and highs, just leans on the middle.',
+  pink:'An even −3 dB per octave. No centre emphasis.',
+  brown:'−6 dB per octave. Deep rumble.',
+  white:'Flat, and the brightest of the five.'
+};
+/* Measured, not guessed, so each shape leaves the generator near 0.1 RMS
+   and the auto-trim starts somewhere sane instead of blasting while it
+   settles. */
+const SCALE = {white:0.1732, pink:0.0567, brown:0.5438};
+
+/* Generated per sample for as long as it runs. An earlier version looped
+   a buffer, which was wrong twice over: a buffer is periodic by
+   definition, and its crossfade used linear gains, which for
+   uncorrelated material drops power to t² + (1−t)² — 3 dB down in the
+   middle of every join. Nothing repeats here because nothing is stored. */
+const PROC = [
+'class NZ extends AudioWorkletProcessor {',
+'  constructor(o){',
+'    super();',
+'    var p = (o && o.processorOptions) || {};',
+'    this.m = p.mode || "white";',
+'    this.k = p.scale || {};',
+'    this.b = [new Float64Array(7), new Float64Array(7)];',
+'    this.l = [0, 0];',
+'    this.port.onmessage = function(e){ if(e.data && e.data.mode) this.m = e.data.mode; }.bind(this);',
+'  }',
+'  process(i, outs){',
+'    var out = outs[0], m = this.m, k = this.k[m] || 1;',
+'    for(var c = 0; c < out.length; c++){',
+'      var d = out[c];',
+'      if(m === "pink"){',
+'        var b = this.b[c];',
+'        for(var x = 0; x < d.length; x++){',
+'          var w = Math.random()*2 - 1;',
+'          b[0] = 0.99886*b[0] + w*0.0555179; b[1] = 0.99332*b[1] + w*0.0750759;',
+'          b[2] = 0.96900*b[2] + w*0.1538520; b[3] = 0.86650*b[3] + w*0.3104856;',
+'          b[4] = 0.55000*b[4] + w*0.5329522; b[5] = -0.7616*b[5] - w*0.0168980;',
+'          d[x] = (b[0]+b[1]+b[2]+b[3]+b[4]+b[5]+b[6] + w*0.5362) * k;',
+'          b[6] = w*0.115926;',
+'        }',
+'      } else if(m === "brown"){',
+'        var L = this.l[c];',
+'        for(var y = 0; y < d.length; y++){',
+'          L = (L + 0.02*(Math.random()*2 - 1)) / 1.02;',
+'          d[y] = L * 3.2 * k;',
+'        }',
+'        this.l[c] = L;',
+'      } else {',
+'        for(var z = 0; z < d.length; z++) d[z] = (Math.random()*2 - 1) * k;',
+'      }',
+'    }',
+'    return true;',
+'  }',
+'}',
+'registerProcessor("nz-noise", NZ);'
+].join('\n');
+
+/* The same arithmetic on the main thread. Deprecated, and the fallback
+   rather than the plan: a worklet module has to load from a URL, and a
+   blob URL for one is refused on a file:// page even though it is fine
+   over https. */
+function scriptSrc(ac){
+  const n = ac.createScriptProcessor(4096, 0, 2);
+  const b = [new Float64Array(7), new Float64Array(7)], last = [0, 0];
+  n.onaudioprocess = ev => {
+    const out = ev.outputBuffer, m = BASE[N.shape], k = SCALE[m] || 1;
+    for(let c=0;c<out.numberOfChannels;c++){
+      const d = out.getChannelData(c);
+      if(m === 'pink'){
+        const s = b[c];
+        for(let i=0;i<d.length;i++){
+          const w = Math.random()*2 - 1;
+          s[0]=0.99886*s[0]+w*0.0555179; s[1]=0.99332*s[1]+w*0.0750759;
+          s[2]=0.96900*s[2]+w*0.1538520; s[3]=0.86650*s[3]+w*0.3104856;
+          s[4]=0.55000*s[4]+w*0.5329522; s[5]=-0.7616*s[5]-w*0.0168980;
+          d[i]=(s[0]+s[1]+s[2]+s[3]+s[4]+s[5]+s[6]+w*0.5362)*k;
+          s[6]=w*0.115926;
+        }
+      } else if(m === 'brown'){
+        let L = last[c];
+        for(let i=0;i<d.length;i++){ L=(L+0.02*(Math.random()*2-1))/1.02; d[i]=L*3.2*k; }
+        last[c] = L;
+      } else {
+        for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*k;
+      }
+    }
+  };
+  return n;
+}
+
+let nctx=null, nsrc=null, nfilt=null, ntrim=null, nvol=null, nana=null, nlock=null;
+let playing=false, engine='—', trimVal=1, quiet=0, recoveries=0;
+let recovering=false, lastRate=0, watch=0;
+
+async function makeSrc(){
+  if(nctx.audioWorklet){
+    try{
+      const u = URL.createObjectURL(new Blob([PROC], {type:'application/javascript'}));
+      await nctx.audioWorklet.addModule(u);
+      URL.revokeObjectURL(u);
+      engine = 'worklet';
+      return new AudioWorkletNode(nctx, 'nz-noise', {numberOfInputs:0,
+        outputChannelCount:[2], processorOptions:{mode:BASE[N.shape], scale:SCALE}});
+    }catch(e){ engine = 'main thread'; }
+  } else engine = 'main thread';
+  return scriptSrc(nctx);
+}
+
+function applyShape(){
+  if(!nfilt) return;
+  if(N.shape === 'band'){
+    nfilt.type='bandpass'; nfilt.frequency.value=N.f0; nfilt.Q.value=N.q;
+  } else if(N.shape === 'tilt'){
+    nfilt.type='peaking'; nfilt.frequency.value=N.f0; nfilt.Q.value=N.q; nfilt.gain.value=9;
+  } else {
+    /* a peaking filter at 0 dB is a wire, so the graph never changes
+       shape and the sound never has to stop to be re-pointed */
+    nfilt.type='peaking'; nfilt.frequency.value=1000; nfilt.Q.value=1; nfilt.gain.value=0;
+  }
+}
+
+/* src → bell → trim → analyser → volume → out.
+   The analyser sits before the volume control: measuring after it meant
+   the auto-trim was reading the fader, and once gain hit its ceiling the
+   measurement stopped responding while the trim kept climbing. */
+async function build(){
+  nsrc = await makeSrc();
+  ntrim = nctx.createGain(); ntrim.gain.value = trimVal;
+  nvol = nctx.createGain(); nvol.gain.value = 0;
+  nana = nctx.createAnalyser(); nana.fftSize = 2048;
+  nfilt = nctx.createBiquadFilter(); applyShape();
+  nsrc.connect(nfilt); nfilt.connect(ntrim); ntrim.connect(nana);
+  nana.connect(nvol); nvol.connect(nctx.destination);
+  nvol.gain.setValueAtTime(0, nctx.currentTime);
+  nvol.gain.linearRampToValueAtTime(N.vol, nctx.currentTime + 2);
+  trim();
+}
+
+/* Narrowing the band throws energy away, so without this a tuning move
+   reads as a volume move and the widest setting always sounds best. */
+let trimT = 0;
+function trim(){
+  clearTimeout(trimT);
+  trimT = setTimeout(()=>{
+    if(!playing || !nana) return;
+    const b = new Float32Array(1024); nana.getFloatTimeDomainData(b);
+    let s = 0; for(let i=0;i<b.length;i++) s += b[i]*b[i];
+    const rms = Math.sqrt(s/b.length);
+    if(rms < 1e-7) return;
+    trimVal = Math.min(60, Math.max(0.02, trimVal*(0.1/rms)));
+    ntrim.gain.setTargetAtTime(trimVal, nctx.currentTime, 0.25);
+    paint();
+  }, 500);
+}
+
+const level = ()=>{
+  if(!nana) return 0;
+  const b = new Float32Array(1024); nana.getFloatTimeDomainData(b);
+  let s = 0; for(let i=0;i<b.length;i++) s += b[i]*b[i];
+  return Math.sqrt(s/b.length);
+};
+
+async function keepAwake(){
+  try{
+    if(navigator.wakeLock && !nlock){
+      nlock = await navigator.wakeLock.request('screen');
+      nlock.addEventListener('release', ()=>{ nlock = null; });
+    }
+  }catch(e){}
+}
+
+async function start(){
+  try{
+    nctx = new (window.AudioContext||window.webkitAudioContext)();
+    /* the music-app category, so the ringer switch does not silence it */
+    try{ if(navigator.audioSession) navigator.audioSession.type = 'playback'; }catch(e){}
+    if(nctx.state === 'suspended') await nctx.resume();
+  }catch(e){ paint('Could not open audio: ' + e.message); return; }
+  playing = true; trimVal = 1; quiet = 0; lastRate = nctx.sampleRate;
+  await build();
+  keepAwake();
+  paint();
+  clearInterval(watch);
+  watch = setInterval(tick, 2000);
+}
+
+function stop(){
+  playing = false;
+  clearInterval(watch); watch = 0;
+  const dying = nsrc, ctxDying = nctx;
+  try{ nvol && nvol.gain.setTargetAtTime(0, nctx.currentTime, 0.25); }catch(e){}
+  setTimeout(()=>{
+    try{ if(dying){ dying.disconnect(); if(dying.onaudioprocess) dying.onaudioprocess = null; } }catch(e){}
+    try{ ctxDying && ctxDying.close(); }catch(e){}
+  }, 800);
+  nsrc = nfilt = ntrim = nvol = nana = null; nctx = null;
+  try{ nlock && nlock.release(); }catch(e){}
+  nlock = null;
+  dimOff();
+  paint();
+}
+
+/* Anything that stops the sound looks the same from here: a route
+   change, a phone call, the worklet dying. State is checked before
+   level, because a closed context hands the analyser back the last
+   buffer it ever saw — a dead graph reads as healthy on level alone. */
+async function recover(why){
+  if(recovering) return;
+  recovering = true; recoveries++;
+  try{
+    try{ if(nsrc){ nsrc.disconnect(); if(nsrc.onaudioprocess) nsrc.onaudioprocess = null; } }catch(e){}
+    try{ nctx && await nctx.close(); }catch(e){}
+    nsrc = nfilt = ntrim = nvol = nana = null;
+    nctx = new (window.AudioContext||window.webkitAudioContext)();
+    try{ if(navigator.audioSession) navigator.audioSession.type = 'playback'; }catch(e){}
+    if(nctx.state === 'suspended') await nctx.resume();
+    lastRate = nctx.sampleRate; trimVal = 1;
+    await build();
+  }catch(e){
+    playing = false; clearInterval(watch); watch = 0;
+    paint('Lost the output (' + why + ') and could not restart.');
+  }
+  quiet = 0; recovering = false;
+  paint();
+}
+
+function tick(){
+  if(!playing){ quiet = 0; return; }
+  /* A session owns the audio — callouts under a wall of noise are
+     useless, so this stands down rather than competing. The one line
+     in here that reads anything of the app's. */
+  if(typeof running !== 'undefined' && running) return stop();
+  paint();
+  if(recovering) return;
+  if(!nctx || nctx.state === 'closed') return recover('context closed');
+  if(nctx.sampleRate !== lastRate && lastRate){
+    lastRate = nctx.sampleRate;
+    return recover('sample rate changed');
+  }
+  if(nctx.state === 'interrupted' || nctx.state === 'suspended'){
+    try{ nctx.resume(); }catch(e){}
+    if(++quiet >= 3) return recover('would not resume');
+    return;
+  }
+  if(level() < 0.005){ if(++quiet >= 2) recover('went quiet'); }
+  else quiet = 0;
+}
+
+/* ── the screen ─────────────────────────────────────────────── */
+makeScreen('noise', {title:'Sleep sound'});
+TAB_OF.noise = 'settings';
+BACKTO.noise = ()=>show('settings');
+
+const tunable = ()=> N.shape === 'band' || N.shape === 'tilt';
+
+function paint(msg){
+  const body = el('noiseBody'); if(!body) return;
+  const status = !playing ? 'Not playing'
+    : `Playing · ${engine} · ${(nctx ? nctx.sampleRate/1000 : 0).toFixed(1)} kHz` +
+      (recoveries ? ` · recovered ${recoveries}×` : '');
+  body.innerHTML = `
+    <p class="note" style="margin-top:0">Runs until you stop it. No timer and no fade — it
+      ends when you end it. The screen is held awake, so plug in.</p>
+
+    <button class="primary" id="nzGo">${playing ? 'Stop' : 'Start'}</button>
+    <p class="note"${playing ? ' style="color:var(--accent)"' : ''}>${esc(status)}</p>
+    ${msg ? `<p class="note" style="color:var(--danger)">${esc(msg)}</p>` : ''}
+
+    <h2 class="sec">Shape</h2>
+    <div class="chips" id="nzShape">${SHAPES.map(([k,label])=>
+      `<button class="chip" data-s="${k}" aria-pressed="${N.shape===k}">${label}</button>`).join('')}</div>
+    <p class="note">${NOTE[N.shape]}</p>
+
+    <div id="nzTune"${tunable() ? '' : ' hidden'}>
+      <h2 class="sec">Centre</h2>
+      <input type="range" id="nzF0" min="150" max="2000" step="10" value="${N.f0}"
+        aria-label="Centre frequency">
+      <p class="note"><b>${N.f0} Hz</b></p>
+      <h2 class="sec">Width</h2>
+      <input type="range" id="nzQ" min="30" max="300" step="5" value="${Math.round(N.q*100)}"
+        aria-label="Width">
+      <p class="note"><b>Q ${N.q.toFixed(2)}</b> — lower is broader.</p>
+    </div>
+
+    <h2 class="sec">Volume</h2>
+    <input type="range" id="nzVol" min="1" max="100" value="${Math.round(N.vol*100)}"
+      aria-label="Volume">
+    <p class="note">Hardware volume still applies on top.</p>
+
+    ${playing ? '<button class="ghost" id="nzDim">Dim the screen</button>' : ''}`;
+  const row = el('nzOpenNote');
+  if(row) row.textContent = playing ? 'Playing' : '';
+}
+
+el('noiseBody').addEventListener('click', e=>{
+  if(e.target.closest('#nzGo')) return playing ? stop() : start();
+  if(e.target.closest('#nzDim')) return dimOn();
+  const sh = e.target.closest('[data-s]');
+  if(sh){
+    N.shape = sh.dataset.s; saveN();
+    if(playing && nsrc){
+      /* switch the generator's mode and re-point the filter in place,
+         behind a brief dip — changing a filter's type mid-stream can
+         click. A dip answering a tap is not a recurring one. */
+      const t = nctx.currentTime;
+      nvol.gain.cancelScheduledValues(t);
+      nvol.gain.setTargetAtTime(0, t, 0.03);
+      setTimeout(()=>{
+        if(!playing || !nsrc) return;
+        if(nsrc.port) nsrc.port.postMessage({mode: BASE[N.shape]});
+        applyShape();
+        trimVal = 1; ntrim.gain.setTargetAtTime(1, nctx.currentTime, 0.05);
+        nvol.gain.setTargetAtTime(N.vol, nctx.currentTime, 0.12);
+        trim();
+      }, 140);
+    }
+    paint();
+  }
+});
+el('noiseBody').addEventListener('input', e=>{
+  const t = e.target;
+  if(t.id === 'nzF0'){
+    N.f0 = +t.value; saveN();
+    if(nfilt && tunable()) nfilt.frequency.setTargetAtTime(N.f0, nctx.currentTime, 0.05);
+    const p = t.nextElementSibling; if(p) p.innerHTML = `<b>${N.f0} Hz</b>`;
+    trim();
+  } else if(t.id === 'nzQ'){
+    N.q = +t.value/100; saveN();
+    if(nfilt && tunable()) nfilt.Q.setTargetAtTime(N.q, nctx.currentTime, 0.05);
+    const p = t.nextElementSibling;
+    if(p) p.innerHTML = `<b>Q ${N.q.toFixed(2)}</b> — lower is broader.`;
+    trim();
+  } else if(t.id === 'nzVol'){
+    N.vol = +t.value/100; saveN();
+    if(nvol) nvol.gain.setTargetAtTime(N.vol, nctx.currentTime, 0.1);
+  }
+});
+
+/* ── the dark ───────────────────────────────────────────────── */
+let dimEl = null;
+function dimOn(){
+  if(!dimEl){
+    dimEl = document.createElement('div');
+    dimEl.id = 'nzDark';
+    dimEl.style.cssText = 'position:fixed;inset:0;background:#000;z-index:60;' +
+      'opacity:0;transition:opacity 1.4s';
+    dimEl.addEventListener('click', dimOff);
+    document.body.appendChild(dimEl);
+  }
+  requestAnimationFrame(()=>{ dimEl.style.opacity = '.97'; });
+}
+function dimOff(){
+  if(!dimEl) return;
+  dimEl.style.opacity = '0';
+  const d = dimEl; dimEl = null;
+  setTimeout(()=>{ try{ d.remove(); }catch(e){} }, 1500);
+}
+
+/* ── the way in ─────────────────────────────────────────────── */
+const anchor = el('audioNote');
+if(anchor) anchor.insertAdjacentHTML('afterend',
+  `<button class="ghost" id="nzOpen" style="margin-top:14px">Sleep sound</button>
+   <p class="note" id="nzOpenNote"></p>`);
+const open = el('nzOpen');
+if(open) open.addEventListener('click', ()=>{
+  if(running) return;
+  paint(); show('noise');
+});
+
+/* Coming back to a screen whose audio has been running unattended has to
+   re-read the state rather than trust what was painted before. */
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState !== 'visible' || !playing) return;
+  keepAwake();
+  if(nctx && nctx.state !== 'running'){ try{ nctx.resume(); }catch(e){} }
+  paint();
+});
+
+paint();
+})();
+/* ╔══════════════════════════════════════════════════════════════╗
+   ║  NOISE MODULE — END                                          ║
    ╚══════════════════════════════════════════════════════════════╝ */
 
 resetAccent();
