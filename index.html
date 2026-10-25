@@ -866,7 +866,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '15.7';
+const APP_VERSION = '15.8';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -6548,7 +6548,7 @@ renderMeals();
    a utility that happens to live in the same app. */
 
 if(!G.noise || typeof G.noise !== 'object') G.noise = {};
-const N = Object.assign({shape:'band', f0:500, q:1.0, vol:0.55, awake:false}, G.noise);
+const N = Object.assign({shape:'band', f0:500, q:1.0, lp:20000, vol:0.55, awake:false}, G.noise);
 const saveN = ()=>{ G.noise = N; saveGlobal(); };
 
 const SHAPES = [['band','Band'],['tilt','Tilt'],['pink','Pink'],
@@ -6570,6 +6570,18 @@ const SCALE = {white:0.1732, pink:0.0567, brown:0.5438};
    bottom one would be a sliver: a 10 Hz step is 13% of the pitch at
    75 Hz and 0.5% at 2 kHz. Mapping the travel logarithmically makes
    every step the same musical distance, so low is as tunable as high. */
+/* A lowpass after the bell, to take the top off. Q is fixed at 0.707 —
+   Butterworth, the flattest one that does not ring. A resonant bump at
+   the corner is exactly the brightness this is here to remove, so the
+   width of it is deliberately not a control. One biquad, so −12 dB per
+   octave above the corner: enough to tame, gentle enough not to sound
+   like a blanket. At the top of its travel it is parked above hearing
+   and does nothing. */
+const LPMIN = 200, LPMAX = 20000, LPSPAN = Math.log(LPMAX/LPMIN);
+const lpOf  = pos => Math.round(LPMIN*Math.exp(LPSPAN*pos/1000));
+const lpPos = f => Math.round(1000*Math.log(Math.min(LPMAX, Math.max(LPMIN, f))/LPMIN)/LPSPAN);
+const lpText = f => f >= LPMAX ? 'Off — nothing removed'
+  : (f >= 1000 ? (f/1000).toFixed(1) + ' kHz' : f + ' Hz') + ' and down −12 dB/oct';
 const FMIN = 75, FMAX = 2000, FSPAN = Math.log(FMAX/FMIN);
 const freqOf = pos => Math.round(FMIN*Math.exp(FSPAN*pos/1000));
 const posOf  = f => Math.round(1000*Math.log(Math.min(FMAX, Math.max(FMIN, f))/FMIN)/FSPAN);
@@ -6655,7 +6667,7 @@ function scriptSrc(ac){
   return n;
 }
 
-let nctx=null, nsrc=null, nfilt=null, ntrim=null, nvol=null, nana=null, nlock=null;
+let nctx=null, nsrc=null, nfilt=null, nlp=null, ntrim=null, nvol=null, nana=null, nlock=null;
 let playing=false, engine='—', trimVal=1, quiet=0, recoveries=0;
 let recovering=false, lastRate=0, watch=0;
 
@@ -6696,7 +6708,9 @@ async function build(){
   nvol = nctx.createGain(); nvol.gain.value = 0;
   nana = nctx.createAnalyser(); nana.fftSize = 2048;
   nfilt = nctx.createBiquadFilter(); applyShape();
-  nsrc.connect(nfilt); nfilt.connect(ntrim); ntrim.connect(nana);
+  nlp = nctx.createBiquadFilter();
+  nlp.type = 'lowpass'; nlp.Q.value = 0.707; nlp.frequency.value = N.lp;
+  nsrc.connect(nfilt); nfilt.connect(nlp); nlp.connect(ntrim); ntrim.connect(nana);
   nana.connect(nvol); nvol.connect(nctx.destination);
   nvol.gain.setValueAtTime(0, nctx.currentTime);
   nvol.gain.linearRampToValueAtTime(N.vol, nctx.currentTime + 2);
@@ -6710,11 +6724,19 @@ function trim(){
   clearTimeout(trimT);
   trimT = setTimeout(()=>{
     if(!playing || !nana) return;
-    const b = new Float32Array(1024); nana.getFloatTimeDomainData(b);
-    let s = 0; for(let i=0;i<b.length;i++) s += b[i]*b[i];
+    const b = new Float32Array(2048); nana.getFloatTimeDomainData(b);
+    let s = 0, pk = 0;
+    for(let i=0;i<b.length;i++){ s += b[i]*b[i];
+      const a = Math.abs(b[i]); if(a > pk) pk = a; }
     const rms = Math.sqrt(s/b.length);
     if(rms < 1e-7) return;
-    trimVal = Math.min(60, Math.max(0.02, trimVal*(0.1/rms)));
+    let want = trimVal*(0.1/rms);
+    /* Rolling the top off raises crest factor — brown through a closed
+       lowpass is nearly a slow wander — so matching RMS alone can drive
+       peaks into the rail and the darkest setting would be the one that
+       distorts. Headroom wins the tie. */
+    if(pk > 1e-7) want = Math.min(want, trimVal*0.7/pk);
+    trimVal = Math.min(60, Math.max(0.02, want));
     ntrim.gain.setTargetAtTime(trimVal, nctx.currentTime, 0.25);
     paint();
   }, 500);
@@ -6766,7 +6788,7 @@ function stop(){
     try{ if(dying){ dying.disconnect(); if(dying.onaudioprocess) dying.onaudioprocess = null; } }catch(e){}
     try{ ctxDying && ctxDying.close(); }catch(e){}
   }, 800);
-  nsrc = nfilt = ntrim = nvol = nana = null; nctx = null;
+  nsrc = nfilt = nlp = ntrim = nvol = nana = null; nctx = null;
   try{ nlock && nlock.release(); }catch(e){}
   nlock = null;
   dimOff();
@@ -6783,7 +6805,7 @@ async function recover(why){
   try{
     try{ if(nsrc){ nsrc.disconnect(); if(nsrc.onaudioprocess) nsrc.onaudioprocess = null; } }catch(e){}
     try{ nctx && await nctx.close(); }catch(e){}
-    nsrc = nfilt = ntrim = nvol = nana = null;
+    nsrc = nfilt = nlp = ntrim = nvol = nana = null;
     nctx = new (window.AudioContext||window.webkitAudioContext)();
     try{ if(navigator.audioSession) navigator.audioSession.type = 'playback'; }catch(e){}
     if(nctx.state === 'suspended') await nctx.resume();
@@ -6855,6 +6877,11 @@ function paint(msg){
       <p class="note"><b>Q ${N.q.toFixed(2)}</b> — lower is broader.</p>
     </div>
 
+    <h2 class="sec">Top end</h2>
+    <input type="range" id="nzLp" min="0" max="1000" step="1" value="${lpPos(N.lp)}"
+      aria-label="Low pass">
+    <p class="note"><b>${lpText(N.lp)}</b></p>
+
     <h2 class="sec">Screen</h2>
     <div class="chips" id="nzAwake">
       <button class="chip" data-w="0" aria-pressed="${!N.awake}">Let it lock</button>
@@ -6918,6 +6945,12 @@ el('noiseBody').addEventListener('input', e=>{
     if(nfilt && tunable()) nfilt.Q.setTargetAtTime(N.q, nctx.currentTime, 0.05);
     const p = t.nextElementSibling;
     if(p) p.innerHTML = `<b>Q ${N.q.toFixed(2)}</b> — lower is broader.`;
+    trim();
+  } else if(t.id === 'nzLp'){
+    N.lp = lpOf(+t.value); saveN();
+    if(nlp) nlp.frequency.setTargetAtTime(N.lp, nctx.currentTime, 0.05);
+    const p = t.nextElementSibling;
+    if(p) p.innerHTML = `<b>${lpText(N.lp)}</b>`;
     trim();
   } else if(t.id === 'nzVol'){
     N.vol = +t.value/100; saveN();
