@@ -866,7 +866,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '15.6';
+const APP_VERSION = '15.7';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -6548,7 +6548,7 @@ renderMeals();
    a utility that happens to live in the same app. */
 
 if(!G.noise || typeof G.noise !== 'object') G.noise = {};
-const N = Object.assign({shape:'band', f0:500, q:1.0, vol:0.55}, G.noise);
+const N = Object.assign({shape:'band', f0:500, q:1.0, vol:0.55, awake:false}, G.noise);
 const saveN = ()=>{ G.noise = N; saveGlobal(); };
 
 const SHAPES = [['band','Band'],['tilt','Tilt'],['pink','Pink'],
@@ -6565,6 +6565,15 @@ const NOTE = {
    and the auto-trim starts somewhere sane instead of blasting while it
    settles. */
 const SCALE = {white:0.1732, pink:0.0567, brown:0.5438};
+
+/* 75 Hz to 2 kHz is nearly five octaves, and on a linear slider the
+   bottom one would be a sliver: a 10 Hz step is 13% of the pitch at
+   75 Hz and 0.5% at 2 kHz. Mapping the travel logarithmically makes
+   every step the same musical distance, so low is as tunable as high. */
+const FMIN = 75, FMAX = 2000, FSPAN = Math.log(FMAX/FMIN);
+const freqOf = pos => Math.round(FMIN*Math.exp(FSPAN*pos/1000));
+const posOf  = f => Math.round(1000*Math.log(Math.min(FMAX, Math.max(FMIN, f))/FMIN)/FSPAN);
+
 
 /* Generated per sample for as long as it runs. An earlier version looped
    a buffer, which was wrong twice over: a buffer is periodic by
@@ -6718,7 +6727,13 @@ const level = ()=>{
   return Math.sqrt(s/b.length);
 };
 
+/* Off by default, because this turned out to keep playing with the
+   screen locked — audioSession.type = 'playback' is doing the work, not
+   a wake lock. Holding the screen on all night was buying nothing and
+   costing a battery. It stays as a switch rather than being deleted,
+   because one good night is evidence and not proof. */
 async function keepAwake(){
+  if(!N.awake) return;
   try{
     if(navigator.wakeLock && !nlock){
       nlock = await navigator.wakeLock.request('screen');
@@ -6818,7 +6833,7 @@ function paint(msg){
       (recoveries ? ` · recovered ${recoveries}×` : '');
   body.innerHTML = `
     <p class="note" style="margin-top:0">Runs until you stop it. No timer and no fade — it
-      ends when you end it. The screen is held awake, so plug in.</p>
+      ends when you end it. It keeps playing with the screen locked and over AirPlay.</p>
 
     <button class="primary" id="nzGo">${playing ? 'Stop' : 'Start'}</button>
     <p class="note"${playing ? ' style="color:var(--accent)"' : ''}>${esc(status)}</p>
@@ -6831,7 +6846,7 @@ function paint(msg){
 
     <div id="nzTune"${tunable() ? '' : ' hidden'}>
       <h2 class="sec">Centre</h2>
-      <input type="range" id="nzF0" min="150" max="2000" step="10" value="${N.f0}"
+      <input type="range" id="nzF0" min="0" max="1000" step="1" value="${posOf(N.f0)}"
         aria-label="Centre frequency">
       <p class="note"><b>${N.f0} Hz</b></p>
       <h2 class="sec">Width</h2>
@@ -6839,6 +6854,15 @@ function paint(msg){
         aria-label="Width">
       <p class="note"><b>Q ${N.q.toFixed(2)}</b> — lower is broader.</p>
     </div>
+
+    <h2 class="sec">Screen</h2>
+    <div class="chips" id="nzAwake">
+      <button class="chip" data-w="0" aria-pressed="${!N.awake}">Let it lock</button>
+      <button class="chip" data-w="1" aria-pressed="${!!N.awake}">Keep it on</button>
+    </div>
+    <p class="note">${N.awake
+      ? 'The screen is held awake, which costs a battery overnight. Only worth it if the sound stops when you lock it.'
+      : 'Sound continues with the screen locked.'}</p>
 
     <h2 class="sec">Volume</h2>
     <input type="range" id="nzVol" min="1" max="100" value="${Math.round(N.vol*100)}"
@@ -6853,6 +6877,13 @@ function paint(msg){
 el('noiseBody').addEventListener('click', e=>{
   if(e.target.closest('#nzGo')) return playing ? stop() : start();
   if(e.target.closest('#nzDim')) return dimOn();
+  const aw = e.target.closest('[data-w]');
+  if(aw){
+    N.awake = aw.dataset.w === '1'; saveN();
+    if(N.awake) keepAwake();
+    else { try{ nlock && nlock.release(); }catch(e){} nlock = null; }
+    return paint();
+  }
   const sh = e.target.closest('[data-s]');
   if(sh){
     N.shape = sh.dataset.s; saveN();
@@ -6878,7 +6909,7 @@ el('noiseBody').addEventListener('click', e=>{
 el('noiseBody').addEventListener('input', e=>{
   const t = e.target;
   if(t.id === 'nzF0'){
-    N.f0 = +t.value; saveN();
+    N.f0 = freqOf(+t.value); saveN();
     if(nfilt && tunable()) nfilt.frequency.setTargetAtTime(N.f0, nctx.currentTime, 0.05);
     const p = t.nextElementSibling; if(p) p.innerHTML = `<b>${N.f0} Hz</b>`;
     trim();
