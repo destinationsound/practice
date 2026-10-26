@@ -867,7 +867,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '16.1';
+const APP_VERSION = '16.2';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -2613,6 +2613,10 @@ setInterval(()=>{
     try{ if(AUDIO_WAITERS[i]()){ want = true; break; } }catch(e){}
   }
   audioHold(want);
+  /* Backstop for the category, covering speech that was cancelled or
+     errored rather than ending cleanly. Never while something is
+     speaking: changing the category under a live utterance cuts it. */
+  try{ if(want && typeof speaking !== 'undefined' && !speaking) applyAudioSession(); }catch(e){}
 }, 2000);
 
 /* A MediaStreamDestination into an <audio> element is the usual way to
@@ -2903,6 +2907,13 @@ if('speechSynthesis' in window){
   speechSynthesis.onvoiceschanged = pickVoice;
   setTimeout(pickVoice, 400);
 }
+/* iOS speech does not run through the page's AudioContext — it is a
+   separate system service — and starting it leaves the page's audio
+   session in the category speech wants, which is one that respects the
+   ringer switch. Nothing put the category back, so after a round of
+   callouts the bells stopped ignoring the switch too, until the app was
+   restarted. Each utterance now restores it on the way out. */
+let speaking = 0;
 function say(text){
   return new Promise(resolve=>{
     if(!('speechSynthesis' in window)) return resolve();
@@ -2913,12 +2924,20 @@ function say(text){
     const t0 = Date.now();
     const fin = ()=>{
       if(done) return; done = true; clearTimeout(guard);
+      speaking = Math.max(0, speaking - 1);
+      /* put the category back the moment speech lets go of it */
+      if(!speaking) applyAudioSession();
+      /* An utterance that returns instantly never sounded. Three in a
+         row is the silent switch far more often than a missing voice,
+         now that we know speech cannot ignore it. */
       if(Date.now() - t0 < 40) silentCount++; else silentCount = 0;
-      if(silentCount === 3) el('statusL').textContent = 'No voice — check Settings';
+      if(silentCount === 3)
+        el('statusL').textContent = 'No voice — check the silent switch';
       resolve();
     };
     const guard = setTimeout(fin, 1200 + text.length * 90);
     u.onend = fin; u.onerror = fin;
+    speaking++;
     speechSynthesis.speak(u);
     speechSynthesis.resume();
   });
@@ -5273,6 +5292,7 @@ function startRest(item, owner){
   cancelBowl(restChime); restChime = null;
   try{
     unlockAudio();
+    applyAudioSession();    // callouts may have left the category elsewhere
     audioHold(true);        // immediately, rather than on the next sweep
     restAudioT = actx.currentTime;
     restWallT = Date.now();
@@ -5658,6 +5678,7 @@ function startWriteTimer(){
   cancelBowl(writeChime); writeChime = null;
   try{
     unlockAudio();
+    applyAudioSession();             // callouts may have moved the category
     audioHold(true);                 // immediately, not on the next sweep
     writeAudioT = actx.currentTime;
     writeWallT = Date.now();
