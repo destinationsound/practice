@@ -867,7 +867,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '16.2';
+const APP_VERSION = '16.3';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -2007,7 +2007,15 @@ function renderHome(){
   G.folded = G.folded || {};
   /* 'playback' was the old default and it stops whatever you are
      listening to. Moved to mixing once; changing it in Settings sticks. */
-  if(!G.audioMoved){ G.audioMode = 'ambient'; G.audioMoved = 1; }
+  /* Moved back to playing on silent. Mixing was the default for a while
+     and it is the wrong one here: everything this app makes a sound for
+     is something you asked it to tell you at a particular moment — a
+     rest ending, a round starting, a sit closing — and none of that is
+     worth less because the ringer switch happens to be off. Mixing is
+     still one tap away for anyone who would rather keep their music.
+     A second key, because the first was already spent moving the other
+     way and a device that has seen it would never be migrated again. */
+  if(!G.audioPlayback){ G.audioMode = 'playback'; G.audioPlayback = 1; saveGlobal(); }
   const sections = CATS.map(c=>{
     const list = exercises.filter(e=>e.category === c.id && isLive(e));
     const head = `<h2 class="grp">${esc(c.name)}</h2>`;
@@ -2613,10 +2621,6 @@ setInterval(()=>{
     try{ if(AUDIO_WAITERS[i]()){ want = true; break; } }catch(e){}
   }
   audioHold(want);
-  /* Backstop for the category, covering speech that was cancelled or
-     errored rather than ending cleanly. Never while something is
-     speaking: changing the category under a live utterance cuts it. */
-  try{ if(want && typeof speaking !== 'undefined' && !speaking) applyAudioSession(); }catch(e){}
 }, 2000);
 
 /* A MediaStreamDestination into an <audio> element is the usual way to
@@ -4111,9 +4115,10 @@ function paintAudioNote(){
     n.textContent = 'This browser will not let a web page set its audio category, so the ringer switch still decides. Flip it to ring for callouts and bells.';
     return;
   }
-  n.textContent = G.audioMode === 'playback'
-    ? 'Callouts and bells play even with the ringer switch on silent. Starting a session will pause music or a podcast.'
-    : 'Plays alongside your music, but goes quiet when the ringer switch is on silent.';
+  n.textContent = (G.audioMode === 'playback'
+    ? 'Bells and chimes play even with the ringer switch on silent. Starting a session will pause music or a podcast.'
+    : 'Plays alongside your music, but goes quiet when the ringer switch is on silent — bells included.')
+    + ' Spoken callouts follow the ringer switch either way: iOS speech is a separate service a web page cannot set a category for.';
 }
 paintAudioNote();
 function paintStorageNote(){
