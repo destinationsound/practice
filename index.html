@@ -490,6 +490,7 @@
     <h2 class="sec">Your data</h2>
     <button class="ghost" id="testSched">Test a bell 3 seconds from now</button>
     <p class="note">The rest timer books its chime ahead like this. If the bowl in Sound plays but this one does not, scheduled audio is being dropped.</p>
+    <p class="note" id="driftNote"></p>
     <p class="note" id="storageNote"></p>
     <button class="ghost" id="doExport">Export a backup</button>
     <button class="ghost" id="doImport">Import a backup</button>
@@ -866,7 +867,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '15.9';
+const APP_VERSION = '16.1';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -1790,7 +1791,7 @@ function goRoot(which){
   const r = which || lastRoot;
   if(ROOT_RENDER[r]){ ROOT_RENDER[r](); return show(r); }
   if(r === 'stats'){ renderStats(); return show('stats'); }
-  if(r === 'settings') return show('settings');
+  if(r === 'settings'){ paintDrift(); return show('settings'); }
   resetAccent(); renderHome(); show('home');
 }
 
@@ -1851,7 +1852,7 @@ el('nav').addEventListener('click', e=>{
   resetAccent();
   if(b.dataset.tab === 'home'){ renderHome(); show('home'); }
   if(b.dataset.tab === 'stats'){ renderStats(); show('stats'); }
-  if(b.dataset.tab === 'settings') show('settings');
+  if(b.dataset.tab === 'settings'){ paintDrift(); show('settings'); }
 });
 
 /* ══ screen: home ══════════════════════════════════════════════ */
@@ -2563,6 +2564,57 @@ function audioOut(){
   return masterGain;
 }
 
+/* iOS suspends an AudioContext that has been producing nothing, and a
+   suspended context stops advancing currentTime — so anything booked
+   against the audio clock never comes due. That is the whole reason a
+   rest chime scheduled ninety seconds ahead can simply never arrive
+   while the app sits in the foreground looking fine.
+
+   The sleep-noise generator never hit this because it is never quiet.
+   This is the same trick deliberately: a looping buffer at about
+   −90 dBFS, inaudible on anything, which costs almost no CPU and keeps
+   the graph from going idle. It is held only while something is waiting
+   on a scheduled sound, never for the life of the app. */
+let holdSrc = null, holdGain = null;
+function audioHold(on){
+  if(!on){
+    if(holdSrc){ try{ holdSrc.stop(); }catch(e){}
+      try{ holdSrc.disconnect(); holdGain.disconnect(); }catch(e){} }
+    holdSrc = holdGain = null;
+    return;
+  }
+  if(holdSrc || !actx) return;
+  try{
+    const n = Math.round(actx.sampleRate);
+    const b = actx.createBuffer(1, n, actx.sampleRate);
+    const d = b.getChannelData(0);
+    for(let i=0;i<n;i++) d[i] = Math.random()*2 - 1;
+    holdGain = actx.createGain();
+    /* loud enough not to be flushed as a denormal, far below hearing */
+    holdGain.gain.value = 0.00003;
+    holdSrc = actx.createBufferSource();
+    holdSrc.buffer = b; holdSrc.loop = true;
+    holdSrc.connect(holdGain); holdGain.connect(audioOut());
+    holdSrc.start();
+  }catch(e){ holdSrc = holdGain = null; }
+}
+
+/* Who is waiting on a sound they have already booked. Pairing a hold
+   with a release at every exit path is how this rots — finishing,
+   discarding, skipping, Back and a thrown error are all exits, and the
+   one that gets forgotten leaves an inaudible source running for the
+   rest of the session. So each module says how to tell whether it is
+   waiting, and the need is recomputed rather than tracked. Two seconds
+   is far below the gaps that matter, which are minutes. */
+const AUDIO_WAITERS = [];
+setInterval(()=>{
+  let want = false;
+  for(let i = 0; i < AUDIO_WAITERS.length; i++){
+    try{ if(AUDIO_WAITERS[i]()){ want = true; break; } }catch(e){}
+  }
+  audioHold(want);
+}, 2000);
+
 /* A MediaStreamDestination into an <audio> element is the usual way to
    escape the ringer switch, but Safari does not reliably play a Web
    Audio stream that way. The element also never reached the DOM here,
@@ -2900,6 +2952,15 @@ function cancelWaits(){ waiters.forEach(o=>{ clearTimeout(o.t); o.resolve(); });
 
 /* ══ session ═══════════════════════════════════════════════════ */
 let running = false, round = 1, remain = 0, wakeLock = null, live = null;
+/* A sit books every bowl up front, with gaps of five or ten minutes
+   between them and the closing pair as much as half an hour out — the
+   same failure as the rest chime and a good deal more exposed. Rounds
+   and circuit blocks strike at the moment instead, but they do it after
+   minutes in which nothing has gone to the audio device, which leaves
+   the context just as liable to have been suspended. The callouts in
+   between do not help: speech is a different subsystem and keeps no
+   audio clock turning. */
+AUDIO_WAITERS.push(()=>running);
 
 /* Pause freezes every clock at once — the round, the reset countdown
    and the session total. What gets logged is time worked, so a 30
@@ -4056,6 +4117,16 @@ el('audioMode').addEventListener('click', e=>{
   G.audioMode = b.dataset.a; saveGlobal();
   applyAudioSession(); paintAudioNote();
 });
+/* Written after every rest, so it says what happened last time rather
+   than what happens when you are standing in Settings watching. */
+function paintDrift(){
+  const n = el('driftNote'); if(!n) return;
+  if(G.restDrift === undefined){ n.textContent = ''; return; }
+  const d = G.restDrift;
+  n.innerHTML = d > 0.4
+    ? `Last rest: the audio clock fell <b>${d.toFixed(2)}s</b> behind — the context stalled and the chime was re-struck at the end.`
+    : `Last rest: the audio clock kept up (${d.toFixed(2)}s drift), so the booked chime fired on time.`;
+}
 el('testSched').addEventListener('click', ()=>{
   try{
     unlockAudio();
@@ -5181,6 +5252,11 @@ function clearAutofill(){
    movement's button should show it running. Without this every card
    said Stop, because the ticker itself is global. */
 let restCd = null, restChime = null, restOwner = -1;
+/* Booking ahead is right — it is sample accurate and needs no gesture
+   later — but it is only as good as the clock it is booked against.
+   These two let the end of a rest ask whether that clock actually ran. */
+let restAudioT = 0, restWallT = 0, restChimeAt = 0;
+AUDIO_WAITERS.push(()=>tickers.has('rest'));
 function paintRest(){
   el('restT').textContent = fmt(restCd ? restCd.secs() : 0);
 }
@@ -5197,14 +5273,35 @@ function startRest(item, owner){
   cancelBowl(restChime); restChime = null;
   try{
     unlockAudio();
-    restChime = bowl(actx.currentTime + item.rest, 0.7, null);
+    audioHold(true);        // immediately, rather than on the next sweep
+    restAudioT = actx.currentTime;
+    restWallT = Date.now();
+    restChimeAt = actx.currentTime + item.rest;
+    restChime = bowl(restChimeAt, 0.7, null);
   }catch(e){}
   ticker('rest', ()=>{
     paintRest();
     if(restCd.done()){
       stopTicker('rest');
       releaseRestButton();        // the rest ran out, so the button says Start again
-      restChime = null;
+      /* Wall clock against audio clock. If the audio clock fell behind,
+         the context stalled and the chime booked at the start never came
+         due — so call it off and strike now rather than leaving the set
+         to end in silence. The drift is kept so Settings can report it:
+         a number here is the difference between "it stalled" and "the
+         sound was never scheduled", which cannot be told apart by ear. */
+      let drift = 0;
+      try{
+        drift = (Date.now() - restWallT)/1000 - (actx.currentTime - restAudioT);
+        if(drift > 0.4){
+          cancelBowl(restChime); restChime = null; restChimeAt = 0;
+          if(actx.state !== 'running') actx.resume();
+          bowl(actx.currentTime + 0.05, 0.7, null);
+        }
+      }catch(e){}
+      G.restDrift = Math.round(drift*100)/100; saveGlobal();
+      audioHold(false);
+      restChime = null; restChimeAt = 0;
       el('restN').textContent = 'Go';
       setTimeout(()=>{ if(!tickers.has('rest')) bar.classList.remove('on'); }, 2500);
     }
@@ -5222,7 +5319,12 @@ function releaseRestButton(){
 function stopRest(){
   stopTicker('rest');
   releaseRestButton();
-  cancelBowl(restChime); restChime = null;
+  /* Skipping at the exact instant the chime is due would abort nodes
+     mid-render, which is the hazard the journal was tripping. */
+  const due = restChimeAt && actx && actx.currentTime >= restChimeAt - 0.15;
+  if(!due) cancelBowl(restChime);
+  restChime = null; restChimeAt = 0;
+  audioHold(false);
   bar.classList.remove('on');
 }
 el('restSkip').addEventListener('click', stopRest);
@@ -5231,7 +5333,10 @@ el('restAdd').addEventListener('click', ()=>{
   restCd.add(30000);
   paintRest();
   cancelBowl(restChime);
-  try{ restChime = bowl(actx.currentTime + restCd.left()/1000, 0.7, null); }catch(e){}
+  try{
+    restChimeAt = actx.currentTime + restCd.left()/1000;
+    restChime = bowl(restChimeAt, 0.7, null);
+  }catch(e){}
 });
 
 function startElapsed(){
@@ -5521,10 +5626,26 @@ function paintMins(){
   el('writeTimerGo').textContent = 'Start';
   el('writeTimerGo').classList.remove('on');
 }
-let writeChime = null;
+let writeChime = null, writeChimeAt = 0, writeAudioT = 0, writeWallT = 0;
+/* Booked v minutes ahead with nothing in between — the rest timer's
+   problem with a longer fuse. */
+AUDIO_WAITERS.push(()=>writeChime !== null);
+/* Only call off a chime that has not come due yet.
+
+   The completion path cancelled the very bowl it was completing: the
+   ticker saw done(), called this, and this stopped the oscillators at
+   the instant they were scheduled to sound. That is the whole reason
+   this timer never rang — not a dropped schedule, a deliberate kill.
+
+   It is also the likeliest reason a journal timer left the app unable
+   to play anything until it was restarted. Aborting nodes mid-render
+   is a good way to wedge a WebKit audio graph, and nothing else in the
+   app cancels a sound at the moment it is sounding. */
 function stopWriteTimer(){
   stopTicker('writeLimit');
-  cancelBowl(writeChime); writeChime = null;
+  const due = writeChimeAt && actx && actx.currentTime >= writeChimeAt - 0.15;
+  if(!due) cancelBowl(writeChime);
+  writeChime = null; writeChimeAt = 0;
   const b = el('writeTimerGo');
   if(b){ b.classList.remove('on'); b.textContent = 'Start'; }
 }
@@ -5535,10 +5656,27 @@ function startWriteTimer(){
   const b = el('writeTimerGo');
   b.hidden = false; b.classList.add('on');
   cancelBowl(writeChime); writeChime = null;
-  try{ unlockAudio(); writeChime = bowl(actx.currentTime + v*60, 0.6, null); }catch(e){}
+  try{
+    unlockAudio();
+    audioHold(true);                 // immediately, not on the next sweep
+    writeAudioT = actx.currentTime;
+    writeWallT = Date.now();
+    writeChimeAt = actx.currentTime + v*60;
+    writeChime = bowl(writeChimeAt, 0.6, null);
+  }catch(e){}
   ticker('writeLimit', ()=>{
     b.textContent = fmt(cd.secs());
     if(cd.done()){
+      /* Same check the rest timer makes: if the audio clock fell behind,
+         the booked bowl never came due, so strike a fresh one. */
+      try{
+        const drift = (Date.now() - writeWallT)/1000 - (actx.currentTime - writeAudioT);
+        if(drift > 0.4){
+          cancelBowl(writeChime); writeChime = null; writeChimeAt = 0;
+          if(actx.state !== 'running') actx.resume();
+          bowl(actx.currentTime + 0.05, 0.6, null);
+        }
+      }catch(e){}
       stopWriteTimer();
       b.textContent = 'Time';
     }
