@@ -872,7 +872,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '17.0';
+const APP_VERSION = '17.1';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -1118,6 +1118,10 @@ const TYPES = {
       [countedTotal(c) || '—', 'Counted reps'],
       [done, 'Times done'],
     ],
+    /* A node with no blocks has nothing to run. Starting one used to
+       open a session and immediately end it, which logs a zero-length
+       record and tells you nothing about why. */
+    runnable:c=>(c.paragraphs || []).length > 0,
     /* One field. Everything else that used to be here now belongs to
        the paragraph that uses it. */
     fields:[
@@ -2353,8 +2357,10 @@ function openExercise(id, day){
     <div class="facts">${facts.map(f=>tileHTML(esc(f[0]), f[1])).join('')}</div>
     ${cur.logOnly
       ? `<button class="primary" id="logForEx">Log a session</button>`
-      : `<button class="primary" id="startEx" ${t.ready?'':'disabled'}>${
+      : `<button class="primary" id="startEx" ${
+          t.ready && !(t.runnable && !t.runnable(cur.cfg)) ? '' : 'disabled'}>${
           !t.ready ? 'Coming soon'
+          : (t.runnable && !t.runnable(cur.cfg)) ? 'Add a block first'
           : isMetric(cur) ? (doneOn(cur, detailDay || new Date()) ? 'Edit the reading' : 'Add a reading')
           : t.kind === 'checkoff' ? (doneOn(cur, detailDay || new Date())
               ? `Done${detailDay ? ' ' + esc(dWeek(detailDay)) : ' today'} — tap to undo`
@@ -2963,8 +2969,9 @@ function startMed(){
     } else {
       el('medPhase').textContent = 'Closing';
       el('medClock').textContent = '0:00';
-      if(!live) return;
-      live.completed = true;
+      /* the sit can already have been ended under this ticker; the
+         screen still needs its closing state either way */
+      if(live) live.completed = true;
       document.body.classList.remove('dim');
       el('medHint').textContent = 'Session complete';
       el('medGo').textContent = 'Done';
@@ -6231,6 +6238,7 @@ TYPES.muaythai.runParagraphs = async function(tok){
     /* Keyed by index, not appended: jumping back re-runs a block rather
        than logging it twice. done stays false until it reaches its own
        end, so a skipped block is recorded as skipped. */
+    if(!live) return;
     live.blocks[i] = {kind:b.kind, label:b.label, done:false};
     /* A counted block only ever stored its target, so "100 reps" was a
        plan the record could not contradict. Carry the target and assume
@@ -6282,6 +6290,12 @@ TYPES.muaythai.runParagraphs = async function(tok){
           if(jumpTo !== null) break;
         }
         stopTicker('circuit');
+        /* The old rounds loop checked this before counting the round and
+           I dropped it when the two runners merged. stop() nulls live,
+           and every round contains awaits, so the session can end
+           between the last combo and this line — which is exactly what
+           "null is not an object (evaluating 'live.rounds')" was. */
+        if(!alive(tok) || !live) return;
         live.rounds++;
         if(jumpTo !== null) break;
         if(r < total && alive(tok)){
@@ -6314,6 +6328,7 @@ TYPES.muaythai.runParagraphs = async function(tok){
     }
     if(!alive(tok)) return;
     if(jumpTo !== null){ i = jumpTo; continue; }
+    if(!live || !live.blocks[i]) return;
     live.blocks[i].done = true;
     i++;
   }
@@ -6338,6 +6353,7 @@ async function callParaCombo(tok, b, n){
   }
   if(!combo.length) return wait(400);
   render(combo);
+  if(!live) return;
   live.combos++; live.strikes += combo.length;
   const L = sides();
   for(let i = 0; i < combo.length; i++){
