@@ -256,6 +256,7 @@
 
   h2.sec{font-family:var(--display);text-transform:uppercase;letter-spacing:.2em;font-size:12px;color:var(--text-dim);font-weight:600;margin:28px 0 12px;}
   h2.sec:first-child{margin-top:0;}
+  .fw{display:contents;}
   .field{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:9px 0;}
   .field label{font-size:15px;}
   .stepr{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:20px;overflow:hidden;}
@@ -770,14 +771,18 @@ const LIB = [
 /* ══ combo generation ══════════════════════════════════════════ */
 /* guarded so a strike can be set aside without breaking any combo
    that still names it — that used to throw inside libraryCombo */
-const allowed = t => !!t && S.groups[t.g] && t.lvl <= S.level;
-function pool(){ return CAT.filter(allowed); }
+/* F is the field values of whichever guided paragraph is calling —
+   groups, level, min, max, source, rest, gap. It used to read the live
+   S, which is the node, and that is exactly why two guided paragraphs in
+   one session could not differ. Nothing in here touches S any more. */
+const allowed = (t, F) => !!t && !!(F.groups || {})[t.g] && t.lvl <= F.level;
+function pool(F){ return CAT.filter(t=>allowed(t, F)); }
 
-function libraryCombo(){
+function libraryCombo(F){
   const fits = LIB.filter(c =>
-    c.lvl <= S.level &&
-    c.k.length >= S.min && c.k.length <= S.max &&
-    c.k.every(key => allowed(BY_KEY[key]))
+    c.lvl <= F.level &&
+    c.k.length >= F.min && c.k.length <= F.max &&
+    c.k.every(key => allowed(BY_KEY[key], F))
   );
   if(!fits.length) return null;
   return fits[Math.floor(Math.random()*fits.length)].k.map(key=>BY_KEY[key]);
@@ -786,15 +791,15 @@ function libraryCombo(){
 /* Block & counter opens on a defensive move and answers it with hands
    and feet only. The transition table already says what each block
    feeds into, so the drill needs no new data — only a different way in. */
-function generatedCombo(){
-  const counter = S.flow === 'counter';
-  const all = pool();
+function generatedCombo(F){
+  const counter = F.source === 'counter';
+  const all = pool(F);
   const guards  = all.filter(t=>t.g === 'defense');
   const strikes = all.filter(t=>t.g !== 'defense');
   if(counter && (!guards.length || !strikes.length)) return [];
   const p = counter ? strikes : all;
   if(!p.length) return [];
-  const n = rnd(S.min, Math.max(S.min, S.max));
+  const n = rnd(F.min, Math.max(F.min, F.max));
   const out = [];
   let prev = null, prevSide = null, range = 2.2, usedSpin = false, defCount = 0, runG = 0;
 
@@ -846,16 +851,16 @@ function generatedCombo(){
   return out;
 }
 
-function buildCombo(){
-  /* the drill is the point of counter flow, so it is always generated */
-  if(S.flow !== 'free' && S.flow !== 'counter'){
-    const lean = S.flow === 'library' ? 1 : .55;
+function buildCombo(F){
+  /* the drill is the point of block & counter, so it is always generated */
+  if(F.source !== 'free' && F.source !== 'counter'){
+    const lean = F.source === 'library' ? 1 : .55;
     if(Math.random() < lean){
-      const c = libraryCombo();
+      const c = libraryCombo(F);
       if(c) return c;
     }
   }
-  return generatedCombo();
+  return generatedCombo(F);
 }
 
 function weighted(list){
@@ -867,7 +872,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '16.3';
+const APP_VERSION = '17.0';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -914,17 +919,166 @@ const catOf = id => CATS.find(c=>c.id === id) || CATS[0];
    tiles. Category is fixed by type — overlap exists, but every
    practice has a dominant focus. Adding a type means adding an
    entry here; nothing in the shell changes. */
+/* The Muay Thai bundle's own fields. Everything describing how combos
+   get called has moved onto the guided paragraph that calls them, which
+   is the thing it actually describes — while those sat up here, two
+   guided paragraphs in one session could never differ from each other,
+   and "rounds" had to masquerade as a shape of the whole exercise.
+   What is left is what genuinely belongs to the exercise: the stance you
+   are drilling in, and the ordered list of parts. */
 const MT_DEFAULTS = {
-  /* Rounds is the original shape and is untouched. A circuit is an
-     ordered list of dumb blocks — timed, guided or counted — each
-     owning its own settings. Rest is just a timed block you name Rest. */
-  shape:'rounds',
-  blocks:[],
-  min:2, max:4, rest:4, gap:.1,
-  groups:{punch:true,kick:true,knee:true,elbow:false,defense:false},
-  stance:'southpaw', level:2, flow:'mixed',
-  useRounds:true, roundLen:180, breakLen:60, rounds:5,
+  stance:'southpaw',
+  paragraphs:[],
 };
+
+/* ══ paragraph types ═══════════════════════════════════════════
+   A paragraph is a small fieldable component owned by its node and
+   ordered within it — Drupal's Paragraphs, minus the revisions we
+   decided against. `kind` is the paragraph type.
+
+   Each declares its own field instances, rendered by the same
+   fieldsHTML/wireFields the node editor uses, so a new paragraph type
+   costs a definition rather than a screen. The editor and runner live
+   in the circuit module; these definitions live here with the bundle,
+   because they are the data model rather than the interface. */
+const PARA_TYPES = {
+  timed: {
+    name:'Timed', accent:'var(--k-timed)',
+    blurb:'Runs for a set time — rope, shadow boxing, a rest',
+    defaults:()=>({kind:'timed', label:'Rope', secs:180}),
+    fields:[
+      {kind:'slider', key:'secs', clock:true, label:'Length',
+       min:10, max:1800, step:5, fmt:v=>fmt(v)},
+    ],
+    summary:b=>`Timed · ${fmt(b.secs)}`,
+    length:b=>+b.secs || 0,
+  },
+  guided: {
+    name:'Bag work', accent:'var(--k-guided)',
+    blurb:'Calls combos aloud, random or a script you write',
+    /* One round by default: dropped into a circuit it behaves like the
+       old guided block. Set rounds higher and it is what bag work used
+       to be, which is the whole point — rounds is a repetition pattern,
+       not a different kind of work. Zero means endless. */
+    defaults:()=>({kind:'guided', label:'Bag work',
+      rounds:1, roundLen:180, breakLen:60,
+      source:'mixed', order:'inorder', combos:[],
+      groups:{punch:true,kick:true,knee:true,elbow:false,defense:false},
+      level:2, min:2, max:4, rest:4, gap:.1}),
+    fields:[
+      {kind:'section', label:'Rounds'},
+      {kind:'slider', key:'rounds', label:'How many', min:0, max:30, step:1,
+       fmt:v=>v ? String(Math.round(v)) : 'Endless'},
+      {kind:'slider', key:'roundLen', clock:true, label:'Round length',
+       min:10, max:900, step:5, fmt:v=>fmt(v)},
+      {kind:'slider', key:'breakLen', clock:true, label:'Rest between rounds',
+       min:5, max:600, step:5, fmt:v=>fmt(v), when:b=>+b.rounds !== 1},
+
+      {kind:'section', label:'Combos'},
+      /* flow and source were two fields describing one choice: flow said
+         how the engine picks, source said whether to use the engine at
+         all. One list field now, with your own combos as the fifth
+         option rather than a separate switch. */
+      {kind:'chips', key:'source', label:'Source',
+       options:[['library','Set combos'],['mixed','Mixed'],['free','Freestyle'],
+                ['counter','Block & counter'],['script','Your combos']]},
+      {kind:'note', text:'Set combos come from a list a coach would call. Freestyle builds new ones from which strikes actually feed into each other. Mixed alternates. Your combos calls only what you have written.'},
+      {kind:'chips', key:'order', label:'Order', when:b=>b.source === 'script',
+       options:[['inorder','In order'],['mix','Mix']]},
+
+      {kind:'slider', key:'min', label:'Shortest combo', min:1, max:6, step:1,
+       when:b=>b.source !== 'script', after:b=>{ if(b.max < b.min) b.max = b.min; }},
+      {kind:'slider', key:'max', label:'Longest combo', min:1, max:8, step:1,
+       when:b=>b.source !== 'script', after:b=>{ if(b.min > b.max) b.min = b.max; }},
+      {kind:'slider', key:'rest', label:'Rest after each combo',
+       min:1, max:15, step:.5, fmt:v=>v.toFixed(1)+'s'},
+      {kind:'slider', key:'gap', label:'Gap between strikes',
+       min:0, max:1, step:.05, fmt:v=>v.toFixed(2)+'s'},
+      {kind:'chips', key:'level', label:'Level', type:'number',
+       when:b=>b.source !== 'script',
+       options:[[1,'Basics'],[2,'Intermediate'],[3,'Advanced']]},
+      {kind:'multi', key:'groups', label:'Techniques', min:1,
+       when:b=>b.source !== 'script',
+       options:[['punch','Punches'],['kick','Kicks'],['knee','Knees'],
+                ['elbow','Elbows'],['defense','Defense']]},
+    ],
+    summary:b=>{
+      const r = +b.rounds === 0 ? 'Endless'
+        : (+b.rounds || 1) > 1 ? `${+b.rounds} × ${fmt(b.roundLen)}` : fmt(b.roundLen);
+      const n = (b.combos || []).length;
+      return `Bag work · ${r} · ${b.source === 'script'
+        ? `${n} combo${n === 1 ? '' : 's'}` : SRC_NAME[b.source] || 'Mixed'}`;
+    },
+    length:b=>{
+      const r = +b.rounds || 1;
+      if(+b.rounds === 0) return 0;         /* endless contributes nothing */
+      return r * (+b.roundLen || 180) + Math.max(0, r - 1) * (+b.breakLen || 60);
+    },
+  },
+  counted: {
+    name:'Counted', accent:'var(--k-counted)',
+    blurb:'Shows a target and waits for you to tap done',
+    defaults:()=>({kind:'counted', label:'Left kicks', target:100}),
+    fields:[
+      {kind:'slider', key:'target', label:'Target reps',
+       min:1, max:500, step:1, fmt:v=>String(Math.round(v))},
+    ],
+    summary:b=>`Counted · ${b.target} reps`,
+    length:()=>0,
+  },
+};
+const SRC_NAME = {library:'Set combos', mixed:'Mixed', free:'Freestyle',
+                  counter:'Block & counter', script:'Your combos'};
+const paraType = b => PARA_TYPES[b && b.kind] || PARA_TYPES.timed;
+const paraLength = b => paraType(b).length(b);
+const sessionLength = c => (c.paragraphs || []).reduce((n,b)=>n + paraLength(b), 0);
+const countedTotal = c => (c.paragraphs || [])
+  .filter(b=>b.kind === 'counted').reduce((n,b)=>n + (+b.target || 0), 0);
+
+/* ── migration ──────────────────────────────────────────────
+   shape is gone. A rounds exercise becomes a node with one guided
+   paragraph holding the settings that used to sit on the node. A
+   circuit becomes its blocks, and each guided one inherits those same
+   node settings so it keeps calling exactly what it called yesterday —
+   then becomes independently editable, which was the point.
+
+   Rewritten rather than read lazily, unlike everything else in here:
+   the old fields are not a different spelling of the new ones, they are
+   on a different entity, and nothing downstream could read both. */
+function migrateMT(c){
+  if(!c || typeof c !== 'object') return c;
+  if(Array.isArray(c.paragraphs)) return c;          /* already moved */
+  const combo = {
+    groups: c.groups || {punch:true,kick:true,knee:true,elbow:false,defense:false},
+    level: +c.level || 2,
+    min: +c.min || 2,
+    max: +c.max || 4,
+    rest: c.rest == null ? 4 : +c.rest,
+    gap: c.gap == null ? .1 : +c.gap,
+  };
+  const src = ['library','mixed','free','counter'].indexOf(c.flow) >= 0 ? c.flow : 'mixed';
+  const brk = +c.breakLen || 60;
+  let paras;
+  if(c.shape === 'circuit'){
+    paras = (c.blocks || []).filter(b=>b && b.kind).map(b=>{
+      if(b.kind === 'counted')
+        return {kind:'counted', label:b.label || 'Counted', target:+b.target || 0};
+      if(b.kind !== 'guided')
+        return {kind:'timed', label:b.label || 'Timed', secs:+b.secs || 180};
+      return Object.assign({kind:'guided', label:b.label || 'Bag work',
+        rounds:1, roundLen:+b.secs || 180, breakLen:brk,
+        source: b.source === 'script' ? 'script' : src,
+        order: b.order || 'inorder',
+        combos: Array.isArray(b.combos) ? b.combos : []}, combo);
+    });
+  } else {
+    paras = [Object.assign({kind:'guided', label:'Bag work',
+      rounds: c.useRounds === false ? 0 : (+c.rounds || 5),
+      roundLen: +c.roundLen || 180, breakLen: brk,
+      source: src, order:'inorder', combos:[]}, combo)];
+  }
+  return {stance: c.stance === 'orthodox' ? 'orthodox' : 'southpaw', paragraphs: paras};
+}
 const TYPES = {
   muaythai:{
     name:'Muay Thai', category:'physical', accent:'var(--t-muaythai)', ink:'var(--on-t-muaythai)',
@@ -941,69 +1095,45 @@ const TYPES = {
       return d.rounds ? `${d.rounds} rounds · ${d.combos || 0} combos` : '';
     },
     defaults:()=>JSON.parse(JSON.stringify(MT_DEFAULTS)),
-    summary:c=>c.shape === 'circuit'
-      ? [`${(c.blocks||[]).length} blocks`, fmt(circuitLength(c)),
-         c.stance === 'orthodox' ? 'Orthodox' : 'Southpaw'].join(' · ')
-      : [
-      c.useRounds ? `${c.rounds} × ${fmt(c.roundLen)} rounds` : 'No round limit',
-      `${c.min}–${c.max} strikes`,
-      ['','Basics','Intermediate','Advanced'][c.level],
-      c.stance === 'orthodox' ? 'Orthodox' : 'Southpaw'
-    ].join(' · '),
-    facts:(c,done)=> c.shape === 'circuit' ? [
-      [(c.blocks||[]).length, 'Blocks'],
-      [fmt(circuitLength(c)), 'Length'],
-      [(c.blocks||[]).filter(b=>b.kind==='counted').reduce((n,b)=>n+(b.target||0),0) || '—', 'Counted reps'],
+    summary:c=>{
+      const ps = c.paragraphs || [];
+      const stance = c.stance === 'orthodox' ? 'Orthodox' : 'Southpaw';
+      /* A node holding one guided block is what used to be called
+         rounds, and "1 block" tells you less than the rounds did.
+         Describe the work rather than the container. */
+      if(ps.length === 1 && ps[0].kind === 'guided'){
+        const b = ps[0];
+        return [+b.rounds === 0 ? 'No round limit' : `${+b.rounds} × ${fmt(b.roundLen)}`,
+                b.source === 'script' ? 'Your combos' : `${b.min}–${b.max} strikes`,
+                ['','Basics','Intermediate','Advanced'][b.level] || '',
+                stance].filter(Boolean).join(' · ');
+      }
+      const len = sessionLength(c);
+      return [ps.length ? `${ps.length} blocks` : 'No blocks yet',
+              len ? fmt(len) : '∞', stance].join(' · ');
+    },
+    facts:(c,done)=>[
+      [(c.paragraphs || []).length, 'Blocks'],
+      [sessionLength(c) ? fmt(sessionLength(c)) : '∞', 'Length'],
+      [countedTotal(c) || '—', 'Counted reps'],
       [done, 'Times done'],
-    ] : [
-      [c.useRounds ? fmt(c.rounds*c.roundLen + (c.rounds-1)*c.breakLen) : '∞', 'Session length'],
-      [c.rest+'s', 'Rest per combo'],
-      /* a cfg that arrived without groups — an old record, a hand-edited
-         import — used to take the whole detail screen down here */
-      [Object.values(c.groups || {}).filter(Boolean).length, 'Weapon groups'],
-      [done, 'Times done']
     ],
+    /* One field. Everything else that used to be here now belongs to
+       the paragraph that uses it. */
     fields:[
-      {kind:'section', label:'Combo', when:c=>c.shape!=='circuit'},
-      {when:c=>c.shape!=='circuit', kind:'slider', key:'min',  label:'Shortest combo', min:1, max:6, step:1,
-       after:c=>{ if(c.max < c.min) c.max = c.min; }},
-      {when:c=>c.shape!=='circuit', kind:'slider', key:'max',  label:'Longest combo',  min:1, max:8, step:1,
-       after:c=>{ if(c.min > c.max) c.min = c.max; }},
-      {when:c=>c.shape!=='circuit', kind:'slider', key:'rest', label:'Rest after each combo', min:1, max:15, step:.5,
-       fmt:v=>v.toFixed(1)+'s'},
-      {when:c=>c.shape!=='circuit', kind:'slider', key:'gap',  label:'Gap between strikes', min:0, max:1, step:.05,
-       fmt:v=>v.toFixed(2)+'s'},
-
-      {when:c=>c.shape!=='circuit', kind:'chips', key:'flow', label:'Flow',
-       options:[['library','Set combos'],['mixed','Mixed'],['free','Freestyle'],['counter','Block & counter']]},
-      {when:c=>c.shape!=='circuit', kind:'note', text:'Set combos come from a list a coach would call. Freestyle builds new ones from which strikes actually feed into each other. Mixed alternates.'},
-
-      {when:c=>c.shape!=='circuit', kind:'chips', key:'level', label:'Level', type:'number',
-       options:[[1,'Basics'],[2,'Intermediate'],[3,'Advanced']]},
-
-      {when:c=>c.shape!=='circuit', kind:'multi', key:'groups', label:'Techniques', min:1,
-       options:[['punch','Punches'],['kick','Kicks'],['knee','Knees'],['elbow','Elbows'],['defense','Defense']]},
-
       {kind:'chips', key:'stance', label:'Stance',
        options:[['orthodox','Orthodox'],['southpaw','Southpaw']]},
-
-      {kind:'chips', key:'useRounds', label:'Rounds', type:'boolean', when:c=>c.shape!=='circuit',
-       options:[[true,'Round timer'],[false,'Endless']]},
-      {kind:'slider', key:'roundLen', clock:true, label:'Round length',        min:10, max:900, step:1, fmt:v=>fmt(v), when:c=>c.shape!=='circuit'},
-      {kind:'slider', key:'breakLen', clock:true, label:'Rest between rounds', min:5,  max:600, step:1, fmt:v=>fmt(v), when:c=>c.shape!=='circuit'},
-      {kind:'slider', key:'rounds',   label:'Rounds',              min:1,  max:30,  step:1, when:c=>c.shape!=='circuit'},
     ],
     /* Modelled on the movement list, which nobody found confusing: the
        editor lists blocks, and each block is edited on its own screen. */
-    editorHTML:c=> c.shape !== 'circuit' ? '' : `
+    editorHTML:c=> `
       <h2 class="sec">Blocks</h2>
       <div id="blockList"></div>
       <button class="addbtn" id="addBlock">+ Add block</button>`,
     editorWire:(c, api)=>{
-      if(c.shape !== 'circuit') return;
-      c.blocks = c.blocks || [];
+      c.paragraphs = c.paragraphs || [];
       const paint = ()=>{
-        el('blockList').innerHTML = c.blocks.length ? c.blocks.map((b,i)=>`
+        el('blockList').innerHTML = c.paragraphs.length ? c.paragraphs.map((b,i)=>`
           <div class="blkRow">
             <button class="open" data-blk="${i}">
               <span class="tick" style="background:${blockAccent(b)}"></span>
@@ -1013,7 +1143,7 @@ const TYPES = {
               </span>
             </button>
             <button class="mv" data-mv="up:${i}" ${i === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
-            <button class="mv" data-mv="down:${i}" ${i === c.blocks.length-1 ? 'disabled' : ''} aria-label="Move down">↓</button>
+            <button class="mv" data-mv="down:${i}" ${i === c.paragraphs.length-1 ? 'disabled' : ''} aria-label="Move down">↓</button>
             <button class="mv" data-bdup="${i}" aria-label="Duplicate">⧉</button>
             <button class="mv" data-bdel="${i}" aria-label="Remove">×</button>
           </div>`).join('')
@@ -1025,13 +1155,13 @@ const TYPES = {
         const dup = e.target.closest('[data-bdup]');
         if(dup){
           const i = +dup.dataset.bdup;
-          c.blocks.splice(i+1, 0, JSON.parse(JSON.stringify(c.blocks[i])));
+          c.paragraphs.splice(i+1, 0, JSON.parse(JSON.stringify(c.paragraphs[i])));
           saveEx(); paint();
           return;
         }
         const del = e.target.closest('[data-bdel]');
         if(del){
-          c.blocks.splice(+del.dataset.bdel, 1);
+          c.paragraphs.splice(+del.dataset.bdel, 1);
           saveEx(); paint();
           return;
         }
@@ -1039,8 +1169,8 @@ const TYPES = {
         if(mv){
           const [dir, at] = mv.dataset.mv.split(':');
           const i = +at, j = dir === 'up' ? i-1 : i+1;
-          if(j < 0 || j >= c.blocks.length) return;
-          [c.blocks[i], c.blocks[j]] = [c.blocks[j], c.blocks[i]];
+          if(j < 0 || j >= c.paragraphs.length) return;
+          [c.paragraphs[i], c.paragraphs[j]] = [c.paragraphs[j], c.paragraphs[i]];
           saveEx(); paint();
           return;
         }
@@ -1227,6 +1357,18 @@ function boot(){
   sessions  = readList(K_SESSIONS, null);
 
   if(Array.isArray(exercises)) exercises = exercises.filter(e=>e.id && e.type && e.cfg);
+  /* Before anything reads a config: the combo fields moved from the node
+     to the guided paragraph that uses them, and nothing downstream can
+     read the old layout. Rewritten rather than read lazily because this
+     is a different entity, not a renamed field. */
+  if(Array.isArray(exercises)){
+    let moved = false;
+    exercises.forEach(e=>{
+      if(e.type !== 'muaythai' || Array.isArray(e.cfg && e.cfg.paragraphs)) return;
+      e.cfg = migrateMT(e.cfg); moved = true;
+    });
+    if(moved) saveEx();
+  }
   if(exercises === null || !exercises.length){
     /* v2.0 kept these as "routines"; before that everything lived in one settings blob */
     const prior = readList('practice.routines.v1', null);
@@ -1398,7 +1540,6 @@ const strikeById = id => BY_KEY[id];   // honours renamed strikes
 const comboFromIds = ids => (ids || []).map(strikeById).filter(Boolean);
 
 const WORDS = {'1':'one','2':'two','3':'three','4':'four','5':'five','6':'six'};
-const circuitLength = c => (c.blocks||[]).reduce((n,b)=>n + (b.kind==='counted' ? 90 : (b.secs||0)), 0);
 const spoken = (t,L) => (G.callouts === 'numbers' && t.num) ? (t.nsay || WORDS[t.num]) : t.label(L);
 const sidesOf = st => st === 'orthodox' ? {lead:'left', rear:'right'} : {lead:'right', rear:'left'};
 /* S is the running session's settings, so sides() is right in a runner
@@ -2313,8 +2454,26 @@ function wireStepr(id, get, set, opts){
   paint();
 }
 
+/* Each field is wrapped so visibility can be toggled without
+   re-rendering, which would cost focus mid-drag. display:contents makes
+   the wrapper invisible to layout, so nothing moves by a pixel.
+
+   `when` was declared on fields in three places and read nowhere — no
+   code ever looked at f.when, so every condition was dead and the
+   editors showed fields that did not apply: rounds settings on a
+   circuit, Unit and Step on a tick-only task. */
 function fieldsHTML(defs, cfg){
-  return defs.map(f=>{
+  return defs.map((f, i)=>`<div class="fw" data-fw="${i}">` + fieldHTML(f, cfg) + `</div>`).join('');
+}
+function applyWhen(defs, cfg, host){
+  const root = host || document;
+  defs.forEach((f, i)=>{
+    const w = root.querySelector(`.fw[data-fw="${i}"]`);
+    if(w) w.hidden = !!f.when && !f.when(cfg);
+  });
+}
+function fieldHTML(f, cfg){
+  return (f=>{
     if(f.kind === 'section') return `<h2 class="sec">${esc(f.label)}</h2>`;
     if(f.kind === 'note')    return `<p class="note">${f.html || esc(f.text || '')}</p>`;
     if(f.kind === 'action')  return `<button class="ghost" id="${esc(f.id)}">${esc(f.label)}</button>`;
@@ -2335,12 +2494,12 @@ function fieldsHTML(defs, cfg){
       <div class="chips" id="${fieldId(f)}">${f.options.map(o=>
         `<button class="chip" data-v="${esc(String(o[0]))}">${esc(o[1])}</button>`).join('')}</div>`;
     return '';
-  }).join('');
+  })(f);
 }
 
-function wireFields(defs, cfg, onChange){
+function wireFields(defs, cfg, onChange, host){
   const painters = [];
-  const repaint = ()=>painters.forEach(p=>p());
+  const repaint = ()=>{ painters.forEach(p=>p()); applyWhen(defs, cfg, host); };
   const changed = ()=>{ repaint(); onChange && onChange(); };
 
   defs.forEach(f=>{
@@ -2707,15 +2866,22 @@ function tapVolumes(n, dir){
    change to a config shape — three of the Muay Thai ones would not have
    survived the circuits work at all. Start from one of your own, or
    build from nothing; these are only for an empty library. */
+/* Both of these are the same shape now — a node and its blocks. The
+   only difference between "rounds" and "a circuit" is how many blocks
+   there are and whether the guided one repeats, which is as it should
+   be: they were never different kinds of thing. */
 TYPES.muaythai.templates = [
-  {name:'Technical rounds', blurb:'Set combos, clean execution, generous reset',
-   cfg:{flow:'library', level:2, min:2, max:4, rest:6, gap:.15, rounds:5, roundLen:180,
-        groups:{punch:true,kick:true,knee:true,elbow:false,defense:false}}},
+  {name:'Technical rounds', blurb:'Five rounds of set combos, generous reset',
+   cfg:{stance:'southpaw', paragraphs:[
+     Object.assign(PARA_TYPES.guided.defaults(), {
+       label:'Bag work', rounds:5, roundLen:180, breakLen:60,
+       source:'library', rest:6, gap:.15}),
+   ]}},
   {name:'Circuit', blurb:'A sequence you build — rope, bag work, counted sets',
-   cfg:{shape:'circuit', blocks:[
+   cfg:{stance:'southpaw', paragraphs:[
      {kind:'timed',   label:'Jump rope', secs:180},
      {kind:'timed',   label:'Rest',      secs:60},
-     {kind:'guided',  label:'Bag work',  secs:180, source:'random'},
+     Object.assign(PARA_TYPES.guided.defaults(), {label:'Bag work', rounds:1, roundLen:180}),
      {kind:'counted', label:'Kicks',     target:100},
    ]}},
   {name:'Class with coaches', blurb:'Training you log by hand afterwards', logOnly:true, cfg:{}},
@@ -3047,6 +3213,9 @@ function stopAllTickers(){ [...tickers.keys()].forEach(stopTicker); }
 let runToken = 0;
 const alive = tok => running && tok === runToken;
 
+/* What the phase line said before a pause, so resuming puts it back
+   rather than guessing from fields the node no longer has. */
+let lastPhase = '';
 let paused = false, pauseStarted = 0, pausedTotal = 0, resumers = [];
 function gate(){ return paused ? new Promise(r=>resumers.push(r)) : Promise.resolve(); }
 function setPaused(on){
@@ -3073,7 +3242,14 @@ const stage=()=>el('stage'), go=()=>el('go');
 function openSession(){
   show('session');
   el('phase').textContent = 'Ready';
-  el('clock').textContent = S.useRounds ? fmt(S.roundLen) : '∞';
+  /* the first paragraph's clock, or a dash when there is nothing to run */
+  el('clock').textContent = (()=>{
+    const first = (S.paragraphs || [])[0];
+    if(!first) return '—';
+    if(first.kind === 'counted') return String(first.target || 0);
+    if(first.kind === 'guided') return +first.rounds === 0 ? '∞' : fmt(first.roundLen);
+    return fmt(first.secs);
+  })();
   el('statusL').textContent = ''; el('statusR').textContent = '';
   stage().innerHTML = '';
   primeSpeech();
@@ -3087,7 +3263,7 @@ function start(){
   live = {start: Date.now(), mark: workedMs(), rounds:0, combos:0, strikes:0, blocks:[]};
   go().textContent = 'Stop'; go().classList.add('stop');
   const pb = el('pauseBtn'); pb.hidden = false; pb.textContent = 'Pause';
-  el('blockNav').hidden = S.shape !== 'circuit';
+  el('blockNav').hidden = (S.paragraphs || []).length < 2;
   holdScreen();
   loop(tok);
 }
@@ -3112,71 +3288,17 @@ function stop(){
   el('statusL').textContent = lastDiscard
     ? `Too short to log (${lastDiscard}s)` : 'Logged';
 }
+/* Every Muay Thai session is a walk through its node's paragraphs.
+   There is no second loop for rounds any more: a guided paragraph with
+   rounds above one does its own round-and-break cycling, which is all
+   rounds ever was — a repetition pattern, not a different kind of
+   session. The old callout() lived here and now lives on the guided
+   paragraph as callParaCombo, because what it calls depends on the
+   paragraph rather than on the exercise. */
 async function loop(tok){
-  if(S.shape === 'circuit' && TYPES.muaythai.runCircuit) return TYPES.muaythai.runCircuit(tok);
-  while(alive(tok)){
-    if(S.useRounds){
-      el('phase').textContent = `Round ${round} of ${S.rounds}`;
-      startClock(S.roundLen);
-      bell(1);
-      await say(`Round ${round}`);
-    } else {
-      el('phase').textContent = 'Working';
-      el('clock').textContent = '∞';
-    }
-    while(alive(tok) && (!S.useRounds || remain > 0)){ await gate(); if(!alive(tok)) return; await callout(tok); }
-    if(!alive(tok)) return;
-
-    stopClock();
-    bell(2);
-    live.rounds++;
-    if(round >= S.rounds){
-      await say('Session complete. Good work.');
-      stop(); return;
-    }
-    el('phase').textContent = 'Rest';
-    stage().innerHTML = '';
-    el('statusL').textContent = 'Next round in';
-    await say('Rest');
-    startClock(S.breakLen);
-    setRope(S.breakLen, 1);
-    while(alive(tok) && remain > 0){ await gate(); await wait(200); }
-    if(!alive(tok)) return;
-    stopClock(); setRope(0,0);
-    el('statusL').textContent = '';
-    round++;
-  }
-}
-async function callout(tok){
-  if(!alive(tok)) return;
-  const combo = buildCombo();
-  if(!combo.length){ el('statusL').textContent = 'Turn on a technique group'; await wait(800); return; }
-  render(combo);
-  live.combos++; live.strikes += combo.length;
-  el('statusL').textContent = 'Throw it';
-  el('statusR').textContent = '';
-  const L = sides();
-  for(let i=0;i<combo.length;i++){
-    await gate();
-    if(!alive(tok)) return;
-    highlight(i);
-    await say(spoken(combo[i], L));
-    if(!alive(tok)) return;
-    if(i < combo.length-1 && S.gap > 0)
-      await wait(S.gap * 1000 * (combo[i].g === 'defense' && S.flow === 'counter' ? 2.2 : 1));
-  }
-  if(!alive(tok)) return;
-  highlight(-1);
-  el('statusL').textContent = 'Reset';
-  const total = S.rest*1000;
-  const cd = countdown(total);
-  while(alive(tok) && !cd.done()){
-    await wait(80);
-    el('statusR').textContent = (cd.left()/1000).toFixed(1);
-    setRopeAt(cd.left()/total);
-  }
-  el('statusR').textContent = '';
-  setRopeAt(0);
+  if(TYPES.muaythai.runParagraphs) return TYPES.muaythai.runParagraphs(tok);
+  el('statusL').textContent = 'Nothing to run this session with';
+  return stop();
 }
 function render(combo){
   const L = sides();
@@ -3245,7 +3367,7 @@ el('pauseBtn').addEventListener('click', ()=>{
   const to = !paused;
   setPaused(to);
   el('pauseBtn').textContent = to ? 'Resume' : 'Pause';
-  el('phase').textContent = to ? 'Paused' : (S.useRounds ? `Round ${round} of ${S.rounds}` : 'Working');
+  el('phase').textContent = to ? 'Paused' : (lastPhase || 'Working');
   if(to){ try{ speechSynthesis.cancel(); }catch(e){} }
 });
 /* It used to end and SAVE, which is what the Stop button is for. */
@@ -5882,17 +6004,10 @@ BACKTO.block    = backToEditor;
 BACKTO.combo    = ()=> blkCfg ? openBlock(blkCfg, blkIndex) : backToEditor();
 
 /* ── shared look-ups the editor needs ───────────────────────── */
-const KINDS = {
-  timed:   {name:'Timed',    accent:'var(--k-timed)', blurb:'Runs for a set time — rope, shadow boxing, a rest'},
-  guided:  {name:'Bag work', accent:'var(--k-guided)', blurb:'Calls combos aloud, random or a script you write'},
-  counted: {name:'Counted',  accent:'var(--k-counted)', blurb:'Shows a target and waits for you to tap done'},
-};
-window.blockAccent  = b => (KINDS[b.kind] || KINDS.timed).accent;
-window.blockSummary = b => b.kind === 'counted'
-  ? `Counted · ${b.target} reps`
-  : b.kind === 'guided'
-    ? `Bag work · ${fmt(b.secs)} · ${b.source === 'script' ? `${(b.combos||[]).length} combos` : 'random'}`
-    : `Timed · ${fmt(b.secs)}`;
+/* One registry, in core with the bundle. The module reads it rather
+   than keeping a second copy that could drift out of step. */
+window.blockAccent  = b => paraType(b).accent;
+window.blockSummary = b => paraType(b).summary(b);
 window.blockRepaint = ()=>{};
 window.addBlockCfg = null;
 
@@ -5900,19 +6015,18 @@ window.addBlockCfg = null;
 el('blockaddBody').innerHTML =
   `<p class="note" style="margin:0 0 16px">Every block is one simple thing. Build a round by adding a bag work block and a rest block after it.</p>
    <div class="blkKind">` +
-  Object.keys(KINDS).map(k=>
-    `<button data-kind="${k}"><span class="t">${esc(KINDS[k].name)}</span><span class="d">${esc(KINDS[k].blurb)}</span></button>`
+  Object.keys(PARA_TYPES).map(k=>
+    `<button data-kind="${k}"><span class="t">${esc(PARA_TYPES[k].name)}</span><span class="d">${esc(PARA_TYPES[k].blurb)}</span></button>`
   ).join('') + `</div>`;
 
 el('blockaddBody').addEventListener('click', e=>{
   const b = e.target.closest('[data-kind]'); if(!b || !addBlockCfg) return;
   const k = b.dataset.kind;
-  const fresh = k === 'counted' ? {kind:'counted', label:'Kicks', target:100}
-    : k === 'guided' ? {kind:'guided', label:'Bag work', secs:180, source:'random', order:'inorder', combos:[]}
-    : {kind:'timed', label:'Rope', secs:180};
-  addBlockCfg.blocks.push(fresh);
+  const T = PARA_TYPES[k]; if(!T) return;
+  addBlockCfg.paragraphs = addBlockCfg.paragraphs || [];
+  addBlockCfg.paragraphs.push(T.defaults());
   saveEx(); blockRepaint();
-  openBlock(addBlockCfg, addBlockCfg.blocks.length - 1);
+  openBlock(addBlockCfg, addBlockCfg.paragraphs.length - 1);
 });
 
 /* ── one block, on its own screen ───────────────────────────── */
@@ -5920,112 +6034,89 @@ let blkCfg = null, blkIndex = -1;
 
 window.openBlock = function(cfg, i){
   blkCfg = cfg; blkIndex = i;
-  const b = cfg.blocks[i];
-  const isG = b.kind === 'guided', isC = b.kind === 'counted';
+  const b = cfg.paragraphs[i];
+  if(!b) return backToEditor();
+  const T = paraType(b);
+
+  /* The paragraph type's fields are field instances rendered by the same
+     machinery the node editor uses, so a new paragraph type costs a
+     definition rather than a screen. Only the combo list below is built
+     by hand, because a list of references is not a field kind. */
   el('blockBody').innerHTML = `
-    <p class="eyebrow">${esc(KINDS[b.kind].name)}</p>
+    <p class="eyebrow">${esc(T.name)}</p>
     <h2 class="sec" style="margin-top:10px">Name</h2>
-    <input type="text" id="blkName" value="${esc(b.label)}" maxlength="28" autocomplete="off">
-
-    ${isC ? `
-      <h2 class="sec">Target</h2>
-      <div class="field"><label>Reps</label>${steprHTML('blkTarget', b.target, {label:'Reps'})}</div>`
-    : `
-      <h2 class="sec">Length</h2>
-      <div class="field"><label>Time</label>${steprHTML('blkSecs', b.secs, {label:'Time', fmt, clock:true})}</div>`}
-
-    ${!isG ? '' : `
-      <h2 class="sec">Combos</h2>
-      <div class="chips" id="blkSource">
-        <button class="chip" data-s="random">Random</button>
-        <button class="chip" data-s="script">Scripted</button>
-      </div>
-      <div id="blkCombo"></div>`}
-
+    <input type="text" id="blkName" value="${esc(b.label || '')}" maxlength="28" autocomplete="off">
+    ${fieldsHTML(T.fields, b)}
+    <div id="blkCombo"></div>
     <button class="primary" id="blkDone" style="margin-top:30px">Done</button>
     <button class="ghost danger" id="blkDel">Remove block</button>
     <button class="ghost" id="blkDup">Duplicate</button>`;
 
-  wireStepr('blkSecs', ()=>b.secs, v=>{ b.secs = v; saveEx(); }, {min:5, max:5400, step:1, fmt, clock:true});
-  wireStepr('blkTarget', ()=>b.target, v=>{ b.target = v; saveEx(); }, {min:1, max:1000, step:1});
-  el('blkName').addEventListener('input', e=>{ b.label = e.target.value.trim() || 'Block'; saveEx(); });
+  el('blkName').addEventListener('input', e=>{
+    b.label = e.target.value.trim() || T.name; saveEx();
+  });
 
-  if(isG){
-    const paintSource = ()=>{
-      setChips('blkSource', x=>x.dataset.s === b.source);
-      el('blkCombo').innerHTML = b.source === 'random'
-        ? `<p class="note">Uses the combo engine — it builds fresh combos from strikes that actually feed into each other.</p>`
-        : (b.combos && b.combos.length
-            ? b.combos.map((ids,ci)=>`
-                <div class="comboRow">
-                  <button class="open" data-combo="${ci}">
-                    <span class="n">${ci+1}</span>
-                    <span class="s">${esc(comboText(ids))}</span>
-                  </button>
-                  <button class="mv" data-cmv="up:${ci}" ${ci === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
-                  <button class="mv" data-cmv="down:${ci}" ${ci === b.combos.length-1 ? 'disabled' : ''} aria-label="Move down">↓</button>
-                  <button class="mv" data-cdup="${ci}" aria-label="Duplicate">⧉</button>
-                  <button class="mv" data-cdel="${ci}" aria-label="Remove">×</button>
-                </div>`).join('')
-            : `<p class="note" style="margin:0">No combos yet.</p>`)
-          + `<button class="addbtn" id="addCombo">+ Add combo</button>
-             <h2 class="sec">Order</h2>
-             <div class="chips" id="blkOrder">
-               <button class="chip" data-o="inorder">In order</button>
-               <button class="chip" data-o="mix">Mix</button>
-             </div>
-             <p class="note">In order drills them as a sequence. Mix shuffles so you cannot anticipate.</p>`;
-      if(b.source === 'script'){
-        setChips('blkOrder', x=>x.dataset.o === (b.order || 'inorder'));
-        el('blkOrder').addEventListener('click', ev=>{
-          const x = ev.target.closest('.chip'); if(!x) return;
-          b.order = x.dataset.o; saveEx(); paintSource();
-        });
-        el('addCombo').addEventListener('click', ()=>openCombo(b, -1));
-      }
-    };
-    /* bound once per open — paintSource runs again on every toggle */
-    el('blkCombo').addEventListener('click', ev=>{
-      const mv = ev.target.closest('[data-cmv]');
-      if(mv){
-        const [dir, at] = mv.dataset.cmv.split(':');
-        const i = +at, j = dir === 'up' ? i-1 : i+1;
-        if(j < 0 || j >= b.combos.length) return;
-        [b.combos[i], b.combos[j]] = [b.combos[j], b.combos[i]];
-        saveEx(); paintSource();
-        return;
-      }
-      const dup = ev.target.closest('[data-cdup]');
-      if(dup){
-        const i = +dup.dataset.cdup;
-        b.combos.splice(i+1, 0, b.combos[i].slice());
-        saveEx(); paintSource();
-        return;
-      }
-      const del = ev.target.closest('[data-cdel]');
-      if(del){
-        b.combos.splice(+del.dataset.cdel, 1);
-        saveEx(); paintSource();
-        return;
-      }
-      const r = ev.target.closest('[data-combo]'); if(!r) return;
-      openCombo(b, +r.dataset.combo);
-    });
-    paintSource();
-    el('blkSource').addEventListener('click', ev=>{
-      const x = ev.target.closest('.chip'); if(!x) return;
-      b.source = x.dataset.s; saveEx(); paintSource();
-    });
-  }
+  const paintCombos = ()=>{
+    const host = el('blkCombo'); if(!host) return;
+    if(b.kind !== 'guided' || b.source !== 'script'){ host.innerHTML = ''; return; }
+    host.innerHTML = `<h2 class="sec">Your combos</h2>` + ((b.combos && b.combos.length)
+      ? b.combos.map((ids, ci)=>`
+          <div class="comboRow">
+            <button class="open" data-combo="${ci}">
+              <span class="n">${ci+1}</span>
+              <span class="s">${esc(comboText(ids))}</span>
+            </button>
+            <button class="mv" data-cmv="up:${ci}" ${ci === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
+            <button class="mv" data-cmv="down:${ci}" ${ci === b.combos.length-1 ? 'disabled' : ''} aria-label="Move down">↓</button>
+            <button class="mv" data-cdup="${ci}" aria-label="Duplicate">⧉</button>
+            <button class="mv" data-cdel="${ci}" aria-label="Remove">×</button>
+          </div>`).join('')
+      : `<p class="note" style="margin:0">No combos yet.</p>`)
+      + `<button class="addbtn" id="addCombo">+ Add combo</button>`;
+    const add = el('addCombo');
+    if(add) add.addEventListener('click', ()=>openCombo(b, -1));
+  };
+
+  /* Changing Source shows or hides the combo list, so the paint rides
+     the same change hook that redraws the fields. */
+  wireFields(T.fields, b, ()=>{ saveEx(); paintCombos(); }, el('blockBody'));
+  paintCombos();
+
+  el('blkCombo').addEventListener('click', ev=>{
+    const mv = ev.target.closest('[data-cmv]');
+    if(mv){
+      const [dir, at] = mv.dataset.cmv.split(':');
+      const x = +at, y = dir === 'up' ? x-1 : x+1;
+      if(y < 0 || y >= b.combos.length) return;
+      [b.combos[x], b.combos[y]] = [b.combos[y], b.combos[x]];
+      saveEx(); paintCombos();
+      return;
+    }
+    const dup = ev.target.closest('[data-cdup]');
+    if(dup){
+      const x = +dup.dataset.cdup;
+      b.combos.splice(x+1, 0, b.combos[x].slice());
+      saveEx(); paintCombos();
+      return;
+    }
+    const del = ev.target.closest('[data-cdel]');
+    if(del){
+      b.combos.splice(+del.dataset.cdel, 1);
+      saveEx(); paintCombos();
+      return;
+    }
+    const r = ev.target.closest('[data-combo]'); if(!r) return;
+    openCombo(b, +r.dataset.combo);
+  });
 
   el('blkDone').addEventListener('click', backToEditor);
   el('blkDup').addEventListener('click', ()=>{
-    cfg.blocks.splice(i + 1, 0, JSON.parse(JSON.stringify(b)));
+    cfg.paragraphs.splice(i + 1, 0, JSON.parse(JSON.stringify(b)));
     saveEx(); backToEditor();
   });
   el('blkDel').addEventListener('click', ()=>
     confirmTap(el('blkDel'), 'Tap again to remove', 'Remove block', ()=>{
-      cfg.blocks.splice(i, 1);
+      cfg.paragraphs.splice(i, 1);
       saveEx(); backToEditor();
     }));
 
@@ -6117,35 +6208,44 @@ async function holdFor(tok, ms, onTick){
   }
 }
 
-TYPES.muaythai.runCircuit = async function(tok){
-  const blocks = (S.blocks || []).filter(b=>b && b.kind);
-  if(!blocks.length){ el('statusL').textContent = 'This circuit has no blocks'; return stop(); }
-  curBlocks = blocks;
+/* The one runner. It serves any node with a paragraphs field and knows
+   nothing about Muay Thai beyond the combos a guided paragraph asks
+   for, so a new bundle with its own paragraph types gets a working
+   runner — timer, advance, skip, done-marking, session record —
+   without this function changing. */
+TYPES.muaythai.runParagraphs = async function(tok){
+  const paras = (S.paragraphs || []).filter(b=>b && b.kind);
+  if(!paras.length){ el('statusL').textContent = 'This session has no blocks'; return stop(); }
+  curBlocks = paras;
   stopTicker('circuit');
 
+  const phase = t => { lastPhase = t; el('phase').textContent = t; };
+  /* "1 of 1" is noise on a session that is one block of rounds */
+  const where = paras.length > 1 ? n => `${n+1} of ${paras.length} · ` : () => '';
+
   let i = S.startAt || 0;
-  while(i < blocks.length && alive(tok)){
+  while(i < paras.length && alive(tok)){
     jumpTo = null;
     curBlock = i;
-    const b = blocks[i];
+    const b = paras[i];
     /* Keyed by index, not appended: jumping back re-runs a block rather
        than logging it twice. done stays false until it reaches its own
        end, so a skipped block is recorded as skipped. */
     live.blocks[i] = {kind:b.kind, label:b.label, done:false};
     /* A counted block only ever stored its target, so "100 reps" was a
        plan the record could not contradict. Carry the target and assume
-       you hit it — one tap mid-workout, correctable afterwards, rather
-       than a number to type with gloves on. */
+       you hit it — correctable afterwards rather than a number to type
+       with gloves on. */
     if(b.kind === 'counted'){
       live.blocks[i].target = +b.target || 0;
       live.blocks[i].count  = +b.target || 0;
     }
-    el('phase').textContent = `${i+1} of ${blocks.length} · ${b.label}`;
+    phase(`${where(i)}${b.label}`);
     bell(1);
     await say(b.label);
     if(!alive(tok)) return;
-
     if(jumpTo !== null){ i = jumpTo; continue; }
+
     if(b.kind === 'counted'){
       el('statusL').textContent = 'Tap done when finished';
       stage().innerHTML =
@@ -6157,29 +6257,56 @@ TYPES.muaythai.runCircuit = async function(tok){
       blockDoneResolve = null;
       el('blockDone').hidden = true;
       stage().innerHTML = '';
+
     } else if(b.kind === 'guided'){
-      el('statusL').textContent = 'Throw it';
-      /* The clock runs on its own ticker rather than being updated once
-         per combo — a combo takes several seconds, and the countdown was
-         visibly frozen for all of them. The ticker also reports zero
-         elapsed while paused, so the block freezes for free. */
-      const cd = countdown((b.secs || 180) * 1000);
-      let n = 0;
-      /* The clock is a pure read of the deadline; the combo loop below
-         never touches it and cannot slow it down or speed it up. */
-      ticker('circuit', ()=>{ el('clock').textContent = fmt(cd.secs()); }, 200, {whilePaused:true});
-      while(goOn(tok) && !cd.done()){
-        await gate();
-        if(!goOn(tok)) break;
-        await callBlockCombo(tok, b, n++);
+      /* Zero rounds is endless — what "no round limit" used to be — and
+         finishes when you finish it. */
+      const total = +b.rounds === 0 ? Infinity : Math.max(1, +b.rounds || 1);
+      for(let r = 1; r <= total && alive(tok); r++){
+        if(total > 1)
+          phase(`${where(i)}${b.label} · round ${r}${
+            isFinite(total) ? ' of ' + total : ''}`);
+        if(r > 1){ bell(1); await say(`Round ${r}`); if(!alive(tok)) return; }
+        el('statusL').textContent = 'Throw it';
+        /* The clock runs on its own ticker rather than being updated once
+           per combo — a combo takes several seconds, and the countdown
+           was visibly frozen for all of them. The ticker also reports
+           zero elapsed while paused, so the round freezes for free. */
+        const cd = countdown((+b.roundLen || 180) * 1000);
+        ticker('circuit', ()=>{ el('clock').textContent = fmt(cd.secs()); }, 200, {whilePaused:true});
+        let n = 0;
+        while(goOn(tok) && !cd.done()){
+          await gate();
+          if(!goOn(tok)) break;
+          await callParaCombo(tok, b, n++);
+          if(jumpTo !== null) break;
+        }
+        stopTicker('circuit');
+        live.rounds++;
+        if(jumpTo !== null) break;
+        if(r < total && alive(tok)){
+          bell(2);
+          phase('Rest');
+          stage().innerHTML = '';
+          el('statusL').textContent = 'Next round in';
+          await say('Rest');
+          if(!alive(tok)) return;
+          const brk = countdown((+b.breakLen || 60) * 1000);
+          ticker('circuit', ()=>{ el('clock').textContent = fmt(brk.secs()); }, 200, {whilePaused:true});
+          setRope(+b.breakLen || 60, 1);
+          while(goOn(tok) && !brk.done()) await wait(150);
+          stopTicker('circuit'); setRope(0, 0);
+          el('statusL').textContent = '';
+          if(jumpTo !== null) break;
+        }
       }
-      stopTicker('circuit');
       stage().innerHTML = '';
+
     } else {
       el('statusL').textContent = 'Go';
-      const total = (b.secs || 60) * 1000;
-      el('clock').textContent = fmt(Math.round(total/1000));
-      await holdFor(tok, total, (left, all)=>{
+      const span = (+b.secs || 60) * 1000;
+      el('clock').textContent = fmt(Math.round(span/1000));
+      await holdFor(tok, span, (left, all)=>{
         el('clock').textContent = fmt(Math.round(left/1000));
         setRopeAt(left/all);
       });
@@ -6192,12 +6319,13 @@ TYPES.muaythai.runCircuit = async function(tok){
   }
   if(!alive(tok)) return;
   bell(2);
-  await say('Circuit complete. Good work.');
+  await say('Session complete. Good work.');
   stop();
 };
 
-/* A scripted block calls what you wrote; a random one calls the engine. */
-async function callBlockCombo(tok, b, n){
+/* Your own combos get called as written; every other source goes to the
+   engine with this paragraph's own settings. */
+async function callParaCombo(tok, b, n){
   let combo;
   if(b.source === 'script' && (b.combos || []).length){
     const list = b.combos;
@@ -6206,7 +6334,7 @@ async function callBlockCombo(tok, b, n){
       : list[n % list.length];
     combo = comboFromIds(ids);
   } else {
-    combo = buildCombo();
+    combo = buildCombo(b);
   }
   if(!combo.length) return wait(400);
   render(combo);
@@ -6218,12 +6346,12 @@ async function callBlockCombo(tok, b, n){
     highlight(i);
     await say(spoken(combo[i], L));
     if(!goOn(tok)) return;
-    if(i < combo.length - 1 && S.gap > 0)
-      await wait(S.gap * 1000 * (combo[i].g === 'defense' && S.flow === 'counter' ? 2.2 : 1));
+    if(i < combo.length - 1 && b.gap > 0)
+      await wait(b.gap * 1000 * (combo[i].g === 'defense' && b.source === 'counter' ? 2.2 : 1));
   }
   highlight(-1);
   el('statusL').textContent = 'Reset';
-  const rest = (S.rest || 4) * 1000;
+  const rest = (+b.rest || 4) * 1000;
   const cd = countdown(rest);
   while(goOn(tok) && !cd.done()){
     await wait(80);
@@ -6251,7 +6379,7 @@ el('prevBlock').addEventListener('click', ()=>{
 /* Pausing a circuit turns the otherwise-empty stage into the running
    order, so you can restart mid-session and pick up where you stopped. */
 window.onCircuitPause = function(isPaused){
-  if(S.shape !== 'circuit' || !running) return;
+  if(!running) return;
   if(!isPaused){ stage().innerHTML = ''; return; }
   stage().innerHTML = `<div class="jumpList">` + curBlocks.map((b,n)=>`
     <button class="jumpRow ${n === curBlock ? 'now' : n < curBlock ? 'past' : ''}" data-jump="${n}">
