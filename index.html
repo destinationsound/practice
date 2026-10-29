@@ -257,6 +257,22 @@
   h2.sec{font-family:var(--display);text-transform:uppercase;letter-spacing:.2em;font-size:12px;color:var(--text-dim);font-weight:600;margin:28px 0 12px;}
   h2.sec:first-child{margin-top:0;}
   .fw{display:contents;}
+  /* A quote, not a card. It reads as something you wrote rather than
+     another panel of the app's own numbers. */
+  .mantra{
+    display:block;width:100%;text-align:left;border:0;background:none;
+    padding:4px 0 18px;margin:0 0 4px;font-size:17px;line-height:1.5;
+    color:var(--text);border-bottom:1px solid var(--line);
+  }
+  .mantra:active{opacity:.6;}
+  .mantra.empty{
+    font-family:var(--display);text-transform:uppercase;letter-spacing:.12em;
+    font-size:12px;font-weight:600;color:var(--text-dim);padding:10px 0 14px;
+  }
+  .mantra.editing{padding:4px 0 14px;border-bottom:1px solid var(--line);margin-bottom:4px;}
+  .mantra.editing textarea{
+    width:100%;font-size:17px;line-height:1.5;min-height:92px;resize:vertical;
+  }
   .field{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:9px 0;}
   .field label{font-size:15px;}
   .stepr{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:20px;overflow:hidden;}
@@ -872,7 +888,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '17.1';
+const APP_VERSION = '17.2';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -2148,6 +2164,31 @@ function exerciseRow(e){
    folds it, and a layout that grows a heading only once a second type
    appears would shift under you. Upkeep stays flat — every item in it is
    the same type, so a heading there would say nothing. */
+/* ══ daily intention ═══════════════════════════════════════════
+   Configuration, not content: one value you edit when it changes,
+   with no dates and no history. That is the whole reason it can exist
+   today rather than waiting for a real database — a set of intentions
+   you scroll back through would be a second entity type, and that is
+   the category that waits.
+
+   It sits above Today because the point is to be read before anything
+   else, and it is editable in place because the defence against a
+   mantra becoming wallpaper is changing it often. Anything that makes
+   that a chore guarantees the feature dies quietly. */
+const mantraBlock = ()=>{
+  const t = (G.mantra || '').trim();
+  if(mantraEditing) return `
+    <div class="mantra editing">
+      <textarea id="mantraEdit" maxlength="400" rows="3"
+        placeholder="What are you holding on to today?">${esc(t)}</textarea>
+      <button class="ghost" id="mantraDone">Done</button>
+    </div>`;
+  if(!t) return `<button class="mantra empty" id="mantraSet">+ Daily intention</button>`;
+  return `<button class="mantra" id="mantraSet">${
+    esc(t).replace(/\n/g, '<br>')}</button>`;
+};
+let mantraEditing = false;
+
 function renderHome(){
   G.folded = G.folded || {};
   /* 'playback' was the old default and it stops whatever you are
@@ -2209,10 +2250,25 @@ function renderHome(){
          <button data-s="az" aria-pressed="${G.sort === 'az'}">A–Z</button>
        </div></div>`
     : '';
-  el('homeBody').innerHTML = backupNag() + todayBlock() + balanceBlock() + sortBar + sections
+  el('homeBody').innerHTML = backupNag() + mantraBlock() + todayBlock() + balanceBlock() + sortBar + sections
     + `<button class="addbtn" id="newEx">+ Add new</button>` + shelf;
 }
+el('homeBody').addEventListener('input', e=>{
+  if(e.target.id === 'mantraEdit'){ G.mantra = e.target.value; saveGlobal(); }
+});
 el('homeBody').addEventListener('click', e=>{
+  if(e.target.closest('#mantraSet')){
+    mantraEditing = true; renderHome();
+    const t = el('mantraEdit');
+    if(t){ t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
+    return;
+  }
+  if(e.target.closest('#mantraDone')){
+    const t = el('mantraEdit');
+    if(t){ G.mantra = t.value.trim(); saveGlobal(); }
+    mantraEditing = false; renderHome();
+    return;
+  }
   if(e.target.closest('#dayBack')){ if(dayOffset > DAY_BACK){ dayOffset--; renderHome(); } return; }
   if(e.target.closest('#dayFwd')){ if(dayOffset < 1){ dayOffset++; renderHome(); } return; }
   if(e.target.closest('#nagBackup')){ show('settings'); return; }
