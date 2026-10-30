@@ -888,7 +888,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '17.2';
+const APP_VERSION = '17.3';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -5980,6 +5980,554 @@ document.addEventListener('click', e=>{
 /* ╔══════════════════════════════════════════════════════════════╗
    ║  JOURNAL MODULE — END                                        ║
    ╚══════════════════════════════════════════════════════════════╝ */
+
+/* ╔═══════════════════════════════════════════════════════════╗
+   ║  RECORD MODULE — START                                       ║
+   ║  Self-contained: injects its own styles and screen,          ║
+   ║  registers itself on TYPES, and touches nothing in the shell.║
+   ║  Deleting everything between the START and END banners       ║
+   ║  returns Thought record to its "Soon" stub.                  ║
+   ╚═══════════════════════════════════════════════════════════╝ */
+/* ══ thought records ═══════════════════════════════════════════
+   A second written content type, and the only one that asks
+   questions rather than handing you a blank page. The journal is
+   the long form; this is the short one you can finish on a day
+   when the long one is too much.
+
+   Six fields, two of them typed. Nothing here reads what you
+   wrote or scores it. The one number the app does anything with
+   is the pair of belief ratings, because that measures the
+   exercise rather than the person doing it: the thought is rated
+   before and after, and the difference says whether the recast
+   landed. It is allowed to go up, and nothing comments when it
+   does.
+
+   The distortion list is shipped and curated — eleven names with
+   an example and its signal words. Deliberately not editable and
+   deliberately not a chip grid of feelings: the names are a
+   vocabulary for spotting a pattern, where a list of emotions
+   read before you have found your own word would just tell you
+   which word to use. */
+(function(){
+const C = TYPES.cbt;
+
+/* ── the vocabulary ──────────────────────────────────────────────
+   Lives in here rather than up with MOVES and CAT because nothing
+   outside this module reads it: deleting the IIFE deletes the
+   feature whole, which is the deal every module in this file makes.
+
+   `ex` is doing the work of a definition. For a pattern like this a
+   concrete instance teaches faster than an abstract description —
+   "Nothing ever works out for me" lands where "drawing broad
+   conclusions from single events" does not. `sig` is a different
+   job: not defining the trap but recognising it in a sentence you
+   already wrote, so it stays hidden until you pick the row and
+   costs nothing to carry. */
+const TRAPS = [
+  {id:'allnothing', name:'All-or-nothing',
+   ex:"If I'm not great at it, I'm worthless.",
+   sig:'always · never · totally · ruined · perfect'},
+  {id:'general',    name:'Overgeneralising',
+   ex:"Nothing ever works out for me.",
+   sig:'always · never · everyone · nobody · every time'},
+  {id:'filter',     name:'Mental filter',
+   ex:"I messed up one part, so the whole thing was bad.",
+   sig:'but · except · only'},
+  {id:'discount',   name:'Discounting the positive',
+   ex:"They were just being nice.",
+   sig:'just · anyone could · doesn’t count'},
+  {id:'mindread',   name:'Mind reading',
+   ex:"He thinks I’m boring.",
+   sig:'he thinks · she must · they probably'},
+  {id:'fortune',    name:'Fortune telling',
+   ex:"This is going to go badly.",
+   sig:'will · going to · bound to · no point'},
+  {id:'catastroph', name:'Catastrophising',
+   ex:"If I make a mistake it’ll be a disaster.",
+   sig:'disaster · ruined · unbearable · the end of'},
+  {id:'emotional',  name:'Emotional reasoning',
+   ex:"I feel useless, so I must be.",
+   sig:'I feel … so I must be'},
+  {id:'should',     name:'Should statements',
+   ex:"I should be further along by now.",
+   sig:'should · must · ought · supposed to'},
+  {id:'label',      name:'Labelling',
+   ex:"I’m a failure.",
+   sig:'I’m a · he’s a · typical'},
+  {id:'personal',   name:'Personalising',
+   ex:"They’re quiet — it must be me.",
+   sig:'my fault · because of me · if I’d just'},
+];
+const trapOf = id => TRAPS.find(t=>t.id === id) || null;
+const trapName = id => { const t = trapOf(id); return t ? t.name : id; };
+
+/* ── the questions ───────────────────────────────────────────────
+   One array, read two ways. The wizard shows the step whose index
+   matches `at`; the edit form renders every entry stacked. Both
+   walk this list, so a seventh question would be one line here
+   and no new interface.
+
+   The order matters: belief is rated before the trap is named and
+   before a fairer version exists, because a rating taken after you
+   have argued with the thought is a rating of the argument. */
+const STEPS = [
+  {k:'thought', kind:'text',  q:'What’s the thought?',
+   hint:'The sentence as it actually turned up. Not tidied up.',
+   ph:'I’m going to make a fool of myself.', need:true},
+  {k:'before',  kind:'rate',  q:'How much do you believe it?',
+   hint:'A feel, not a measurement.'},
+  {k:'feeling', kind:'text',  q:'What does it feel like?',
+   hint:'Your words, however rough. One or several.',
+   ph:'tight chest, kind of sick, embarrassed already', rows:3},
+  {k:'traps',   kind:'traps', q:'What’s the trap?',
+   hint:'Pick what fits, or skip. Getting the name exactly right matters less than noticing there is one.',
+   skip:true},
+  {k:'reframe', kind:'text',  q:'What’s a fairer version?',
+   hint:'Not a nicer version — one you could actually defend.',
+   ph:'I’ll probably be nervous for the first minute and then it’ll be fine, like last time.'},
+  {k:'after',   kind:'rate',  q:'And how much do you believe it now?',
+   hint:'Up, down or the same. All three are an answer.', echo:true},
+];
+
+/* ── styles ──────────────────────────────────────────────────── */
+const css = document.createElement('style');
+css.textContent = `
+  .recWrap{display:flex;flex-direction:column;}
+  .recBar{height:2px;background:var(--line);margin:0 0 20px;flex:none;}
+  .recBar i{display:block;height:100%;background:var(--accent);transition:width .18s;}
+  .recCount{
+    font-family:var(--display);text-transform:uppercase;letter-spacing:.18em;
+    font-size:11px;color:var(--text-dim);margin:0 0 8px;
+  }
+  .recQ{font-size:23px;line-height:1.3;margin:0 0 6px;font-weight:600;}
+  .recHint{color:var(--text-dim);font-size:13.5px;line-height:1.5;margin:0 0 18px;}
+  /* The thought being re-rated, shown back on the last step. Rating
+     "it" with the sentence three screens behind you is rating a
+     memory of the thought. */
+  .recEcho{
+    border-left:3px solid var(--accent);padding:10px 0 10px 13px;margin:0 0 18px;
+    font-size:16px;line-height:1.5;color:var(--text);
+  }
+  .recText{
+    width:100%;min-height:26vh;resize:none;-webkit-appearance:none;
+    background:var(--bg);color:var(--text);border:1px solid var(--line);
+    border-radius:2px;padding:14px;font-size:17px;line-height:1.6;
+    font-family:var(--body);
+  }
+  .recText:focus{outline:none;border-color:var(--accent);}
+  .recText.short{min-height:12vh;}
+  .recRate{text-align:center;padding:10px 0 4px;}
+  .recRate b{font-family:var(--mono);font-size:54px;font-weight:400;display:block;line-height:1;}
+  .recRate span{
+    font-family:var(--display);text-transform:uppercase;letter-spacing:.18em;
+    font-size:11px;color:var(--text-dim);display:block;margin-top:8px;
+  }
+  .recRate input[type=range]{margin-top:18px;}
+  .recEnds{
+    display:flex;justify-content:space-between;
+    font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;
+    font-size:10.5px;color:var(--text-dim);
+  }
+  /* A row, not a chip: each one carries an example, and an example is
+     the only thing in here that teaches. Signal words are held back
+     until the row is picked — eleven rows showing everything at once
+     is a wall nobody scans. */
+  .trap{
+    width:100%;text-align:left;display:block;padding:12px 0 12px 13px;
+    border-bottom:1px solid var(--line);border-left:3px solid transparent;
+  }
+  .trap .tn{display:block;font-size:16px;color:var(--text);}
+  .trap .te{display:block;font-size:13.5px;line-height:1.45;color:var(--text-dim);margin-top:3px;font-style:italic;}
+  .trap .ts{display:none;}
+  .trap[aria-pressed=true]{border-left-color:var(--accent);background:var(--bg-raised);}
+  .trap[aria-pressed=true] .ts{
+    display:block;margin-top:7px;font-family:var(--display);
+    text-transform:uppercase;letter-spacing:.1em;font-size:10.5px;
+    color:var(--text-dim);line-height:1.7;
+  }
+  .recNav{display:flex;gap:10px;margin-top:22px;}
+  .recNav .ghost{flex:0 0 32%;margin-top:0;}
+  .recNav .primary{flex:1;}
+  /* the edit form: every question at once, each with its label */
+  .recField{margin:0 0 26px;}
+  .recField > label{
+    display:block;font-family:var(--display);text-transform:uppercase;
+    letter-spacing:.2em;font-size:12px;color:var(--text-dim);
+    font-weight:600;margin:0 0 10px;
+  }
+  .recRow{
+    width:100%;text-align:left;display:block;
+    padding:15px 0;border-bottom:1px solid var(--line);
+  }
+  .recRow .when{
+    font-family:var(--display);text-transform:uppercase;letter-spacing:.12em;
+    font-size:12px;color:var(--text-dim);
+  }
+  .recRow .said{
+    display:block;margin-top:6px;font-size:15px;line-height:1.5;color:var(--text);
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  .recRow .shift{
+    display:block;margin-top:5px;font-family:var(--mono);font-size:12.5px;color:var(--text-dim);
+  }
+`;
+document.head.appendChild(css);
+
+/* ── screen ──────────────────────────────────────────────────── */
+makeScreen('rec', {session:true, title:'Thought record', html:`
+  <div class="sessbar">
+    <span class="eyebrow" id="recName">Thought record</span>
+    <span class="spacer"></span>
+    <button class="iconbtn" id="recQuit" aria-label="Close">✕</button>
+  </div>
+  <div class="scroll recWrap">
+    <div class="recBar" id="recBar"><i id="recFill"></i></div>
+    <div id="recBody"></div>
+    <div class="recNav" id="recNav">
+      <button class="ghost" id="recBack">Back</button>
+      <button class="primary" id="recNext">Next</button>
+    </div>
+    <button class="ghost" id="recSkip" hidden>Skip this one</button>
+    <button class="ghost danger" id="recDel" hidden>Delete record</button>
+  </div>`});
+
+/* ── state ───────────────────────────────────────────────────── */
+const K_DRAFT = 'practice.recdraft.v1';
+const blank = ()=>({thought:'', before:50, feeling:'', traps:[], reframe:'', after:50});
+
+let editing = null;      // the session being edited, or null for a new record
+let started = 0;         // the record's own timestamp
+let at = 0;              // which step the wizard is on
+let form = false;        // true while editing: all questions at once
+let D = blank();
+
+/* Time spent, on the journal's rule and for the journal's reason: a
+   record left open on a locked phone should record the thinking, not
+   the evening. Any interaction counts here, not just typing — half of
+   these steps are a drag or a tap. */
+const IDLE_AFTER = 45000;
+let spent = 0, lastAct = 0, idleTick = null;
+function acted(){
+  const now = mono();
+  if(lastAct && now - lastAct < IDLE_AFTER) spent += now - lastAct;
+  lastAct = now;
+  clearTimeout(idleTick);
+  idleTick = setTimeout(()=>{ lastAct = 0; }, IDLE_AFTER);
+}
+function spentSecs(){
+  const now = mono();
+  const tail = (lastAct && now - lastAct < IDLE_AFTER) ? now - lastAct : 0;
+  return Math.round((spent + tail)/1000);
+}
+function resetSpent(prev){
+  spent = (prev || 0) * 1000; lastAct = 0;
+  clearTimeout(idleTick); idleTick = null;
+}
+
+const recordsFor = exId => sessionsFor(exId).filter(s=>s.type === 'cbt');
+const shiftOf = d => (d && d.before != null && d.after != null) ? d.before - d.after : null;
+/* Reads as a direction, not a score: belief fell 35, or rose 10. */
+const shiftText = n => n === null ? ''
+  : n > 0 ? `−${n}` : n < 0 ? `+${Math.abs(n)}` : 'no change';
+const saveDraft = ()=>{
+  if(editing) return;                     // an edit commits on Save, not per keystroke
+  write(K_DRAFT, {exerciseId: cur && cur.id, start: started, at, spent: spentSecs(), d: D});
+};
+
+/* ── the type ────────────────────────────────────────────────── */
+Object.assign(C, {
+  ready:true, kind:'written',
+  blurb:'Catch a thought and write a fairer one',
+  defaults:()=>({}),
+  fields:[],
+  summary:()=>'Six questions',
+  facts:()=>{
+    const mine = cur ? recordsFor(cur.id) : [];
+    /* Median rather than mean, and shown as "typical" rather than
+       "average", because three records is not a sample. It is the one
+       number here that measures the exercise instead of the person. */
+    const shifts = mine.map(s=>shiftOf(s.detail)).filter(n=>n !== null).sort((a,b)=>a-b);
+    const med = shifts.length ? shifts[Math.floor(shifts.length/2)] : null;
+    return [
+      [mine.length, 'Records'],
+      [mine.length ? dDay(mine[0].start) : '—', 'Last one'],
+      [med === null ? '—' : shiftText(med), 'Typical shift'],
+    ];
+  },
+  line:s=>{
+    const d = s.detail || {};
+    const t = String(d.thought || '').trim();
+    if(!t) return '';
+    const head = t.length > 58 ? t.slice(0, 58) + '…' : t;
+    const n = shiftOf(d);
+    return n === null ? head : `${head} · ${shiftText(n)}`;
+  },
+  logPastLabel:'Log one done on paper',
+  open:()=>openRec(null),
+  editSession:s=>openRec(s),
+});
+
+/* ── opening ─────────────────────────────────────────────────── */
+function openRec(existing){
+  editing = existing || null;
+  form = !!existing;
+  const draft = existing ? null : read(K_DRAFT, null);
+  const resumed = draft && draft.exerciseId === (cur && cur.id) && draft.d ? draft : null;
+
+  if(existing){
+    D = Object.assign(blank(), existing.detail || {});
+    D.traps = Array.isArray(D.traps) ? D.traps.slice() : [];
+    started = existing.start;
+    at = 0;
+    resetSpent(existing.dur);
+  } else if(resumed){
+    D = Object.assign(blank(), resumed.d);
+    D.traps = Array.isArray(D.traps) ? D.traps.slice() : [];
+    started = resumed.start;
+    at = Math.min(STEPS.length - 1, Math.max(0, +resumed.at || 0));
+    resetSpent(resumed.spent);
+  } else {
+    D = blank();
+    started = Date.now();
+    at = 0;
+    resetSpent(0);
+  }
+
+  el('recName').textContent = cur ? cur.name : 'Thought record';
+  el('recDel').hidden = !existing;
+  el('recDel').dataset.armed = '0';
+  el('recDel').textContent = 'Delete record';
+  existing ? beginEdit('rec') : endEditChrome();
+  paint();
+  show('rec');
+  if(!form) setTimeout(()=>focusStep(), 60);
+}
+const endEditChrome = ()=>{
+  const sec = el('s-rec');
+  if(sec){ sec.classList.add('sessionScreen'); sec.classList.remove('editing'); }
+  delete BACKTO.rec;
+};
+
+/* ── drawing ─────────────────────────────────────────────────── */
+function controlHTML(f, short){
+  if(f.kind === 'text') return `<textarea class="recText${short ? ' short' : ''}" data-k="${f.k}"
+    placeholder="${esc(f.ph || '')}">${esc(D[f.k] || '')}</textarea>`;
+  if(f.kind === 'rate') return `
+    <div class="recRate">
+      <b id="rv-${f.k}">${+D[f.k]}</b><span>out of 100</span>
+      <input type="range" min="0" max="100" step="5" value="${+D[f.k]}" data-k="${f.k}"
+             aria-label="Belief out of 100">
+      <div class="recEnds"><span>Not at all</span><span>Completely</span></div>
+    </div>`;
+  if(f.kind === 'traps') return `<div class="trapList">${TRAPS.map(t=>`
+    <button class="trap" data-trap="${t.id}" aria-pressed="${D.traps.indexOf(t.id) >= 0}">
+      <span class="tn">${esc(t.name)}</span>
+      <span class="te">“${esc(t.ex)}”</span>
+      <span class="ts">Look for · ${esc(t.sig)}</span>
+    </button>`).join('')}</div>`;
+  return '';
+}
+
+function paint(){
+  form ? paintForm() : paintStep();
+  wire();
+}
+
+function paintStep(){
+  const f = STEPS[at], last = at === STEPS.length - 1;
+  el('recBar').hidden = false;
+  el('recFill').style.width = Math.round((at + 1) / STEPS.length * 100) + '%';
+  el('recBody').innerHTML = `
+    <p class="recCount">Step ${at + 1} of ${STEPS.length}</p>
+    <p class="recQ">${esc(f.q)}</p>
+    ${f.echo && String(D.thought || '').trim()
+      ? `<p class="recEcho">${esc(D.thought)}</p>` : ''}
+    ${f.hint ? `<p class="recHint">${esc(f.hint)}</p>` : ''}
+    ${controlHTML(f, f.k === 'feeling')}`;
+  el('recNav').hidden = false;
+  el('recBack').disabled = at === 0;
+  el('recNext').textContent = last ? 'Save record' : 'Next';
+  /* A step you cannot leave needs to say so before you tap, not after. */
+  el('recNext').disabled = !!f.need && !String(D[f.k] || '').trim();
+  el('recSkip').hidden = !f.skip;
+  el('recSkip').textContent = D.traps.length ? 'None of these' : 'Skip this one';
+}
+
+/* Editing is a form, not a wizard. Six screens is the right shape for
+   writing a record and the wrong one for fixing a word in it — you
+   want the field in front of you, not four taps away. */
+function paintForm(){
+  el('recBar').hidden = true;
+  el('recBody').innerHTML = `
+    <p class="recCount">${esc(stamp(started))}</p>
+    ` + STEPS.map(f=>`
+    <div class="recField">
+      <label>${esc(f.q)}</label>
+      ${controlHTML(f, f.k === 'feeling')}
+    </div>`).join('') + `
+    <button class="primary" id="recSave">Save changes</button>`;
+  el('recNav').hidden = true;
+  el('recSkip').hidden = true;
+}
+
+const stamp = ms => new Date(ms).toLocaleString([], {
+  weekday:'long', month:'short', day:'numeric', hour:'numeric', minute:'2-digit'
+});
+
+function focusStep(){
+  const t = el('recBody').querySelector('.recText');
+  if(t) try{ t.focus(); }catch(e){}
+}
+
+/* ── wiring ──────────────────────────────────────────────────────
+   Re-wired on every paint because every paint replaces the markup.
+   Cheap, and the alternative is a delegated listener that has to work
+   out which of two layouts it is in. */
+function wire(){
+  const body = el('recBody');
+
+  body.querySelectorAll('.recText').forEach(box=>{
+    box.addEventListener('input', ()=>{
+      acted();
+      D[box.dataset.k] = box.value;
+      const f = STEPS[at];
+      if(!form && f.need) el('recNext').disabled = !box.value.trim();
+      saveDraft();
+    });
+  });
+
+  body.querySelectorAll('input[type=range]').forEach(r=>{
+    const out = el('rv-' + r.dataset.k);
+    r.addEventListener('input', ()=>{
+      acted();
+      D[r.dataset.k] = +r.value;
+      if(out) out.textContent = r.value;
+      saveDraft();
+    });
+  });
+
+  const list = body.querySelector('.trapList');
+  if(list) list.addEventListener('click', e=>{
+    const b = e.target.closest('[data-trap]'); if(!b) return;
+    acted();
+    const id = b.dataset.trap, i = D.traps.indexOf(id);
+    i >= 0 ? D.traps.splice(i, 1) : D.traps.push(id);
+    b.setAttribute('aria-pressed', String(i < 0));
+    if(!form) el('recSkip').textContent = D.traps.length ? 'None of these' : 'Skip this one';
+    saveDraft();
+  });
+
+  const save = el('recSave');
+  if(save) save.addEventListener('click', commit);
+}
+
+/* ── moving through it ───────────────────────────────────────── */
+el('recNext').addEventListener('click', ()=>{
+  const f = STEPS[at];
+  if(f.need && !String(D[f.k] || '').trim()) return;
+  if(at === STEPS.length - 1) return commit();
+  at++; paint(); saveDraft();
+  el('s-rec').querySelector('.scroll').scrollTop = 0;
+  focusStep();
+});
+el('recBack').addEventListener('click', ()=>{
+  if(at === 0) return;
+  at--; paint(); saveDraft();
+  el('s-rec').querySelector('.scroll').scrollTop = 0;
+});
+/* Skip clears what the step holds and moves on, so "skip" and "none of
+   these" are the same button doing the same thing. */
+el('recSkip').addEventListener('click', ()=>{
+  D.traps = [];
+  if(at === STEPS.length - 1) return commit();
+  at++; paint(); saveDraft();
+  el('s-rec').querySelector('.scroll').scrollTop = 0;
+  focusStep();
+});
+
+/* ── saving ──────────────────────────────────────────────────── */
+function detail(){
+  return {
+    thought: String(D.thought || '').trim(),
+    before: +D.before,
+    feeling: String(D.feeling || '').trim(),
+    traps: D.traps.slice(),
+    reframe: String(D.reframe || '').trim(),
+    after: +D.after,
+  };
+}
+function commit(){
+  const d = detail();
+  /* The thought is the record. Everything else can be blank and the
+     record still says something; without it there is nothing to keep. */
+  if(!d.thought){
+    at = 0; form = false; paint(); focusStep();
+    return;
+  }
+  const secs = spentSecs();
+  if(editing){
+    editing.detail = d;
+    editing.dur = secs;
+    editing.end = editing.start + secs * 1000;
+    sessionsChanged();
+    editing = null;
+    resetSpent(0);
+    return endEdit('rec');
+  }
+  commitSession(makeSession(cur, {start: started, dur: secs, source:'app', detail: d}));
+  write(K_DRAFT, null);
+  resetSpent(0);
+  backToExercise();
+}
+
+el('recDel').addEventListener('click', ()=>
+  confirmTap(el('recDel'), 'Tap again to delete', 'Delete record', ()=>{
+    removeSession(editing);
+    editing = null;
+    resetSpent(0);
+    endEdit('rec');
+  }));
+
+wireDiscard('recQuit', ()=>{
+  const wasEdit = !!editing;
+  editing = null;
+  resetSpent(0);
+  if(wasEdit) return endEdit('rec');
+  write(K_DRAFT, null);
+  D = blank(); at = 0;
+  backToExercise();
+});
+
+/* ── records listed on the exercise screen ───────────────────── */
+C.detailExtra = ex => {
+  const mine = recordsFor(ex.id);
+  if(!mine.length) return '';
+  return `<h2 class="sec">Records</h2>` + mine.map(s=>{
+    const d = s.detail || {};
+    const t = String(d.thought || '').trim();
+    const n = shiftOf(d);
+    const named = (d.traps || []).map(trapName).join(' · ');
+    return `<button class="recRow" data-rec="${s.start}">
+      <span class="when">${esc(dWeek(s.start))} · ${esc(dTime(s.start))}${
+        s.source === 'manual' ? ' · on paper' : ''}</span>
+      <span class="said">${t ? esc(t) : 'Logged, nothing written'}</span>
+      ${n === null && !named ? '' : `<span class="shift">${
+        n === null ? '' : esc(`${d.before} → ${d.after}`)}${
+        n !== null && named ? '  ·  ' : ''}${esc(named)}</span>`}
+    </button>`;
+  }).join('');
+};
+
+document.addEventListener('click', e=>{
+  const b = e.target.closest('[data-rec]');
+  if(!b || screen !== 'exercise') return;
+  const s = sessions.find(x=>String(x.start) === b.dataset.rec);
+  if(s) editSession(s);
+});
+})();
+/* ╔═══════════════════════════════════════════════════════════╗
+   ║  RECORD MODULE — END                                         ║
+   ╚═══════════════════════════════════════════════════════════╝ */
 
 /* ╔══════════════════════════════════════════════════════════════╗
    ║  CIRCUIT MODULE — START                                      ║
