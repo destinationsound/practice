@@ -437,6 +437,13 @@
 <div class="top">
   <button class="iconbtn" id="back" aria-label="Back" hidden>‹</button>
   <h1 id="title">BETR</h1>
+  <!-- Adding an exercise used to be a dashed button under three
+       category sections, which put it further away the more exercises
+       you owned, and sat it between the lists and the Archived shelf —
+       a boundary it has nothing to do with. Up here it costs no scroll
+       and never moves. The header's right side was empty, and h1 holds
+       flex:1, so it needs no layout of its own. -->
+  <button class="iconbtn" id="addNew" aria-label="Add new" hidden>+</button>
 </div>
 
 <div id="errBar" hidden></div>
@@ -642,15 +649,62 @@ const CAT = [
   {k:'rearBodyBlock', g:'defense', side:'none', lvl:2, w:1, open:1.3, close:.5, r:2.2, xr:2.2, label:L=>`${L.rear} body block`},
   {k:'pivot',     g:'defense', side:'none', lvl:2, w:5, open:.3,  close:1.6, r:2.0, xr:2.4, label:L=>`pivot out`},
   {k:'stepBack',  g:'defense', side:'none', lvl:2, w:4, open:.8,  close:1.2, r:2.2, xr:2.8, label:L=>`step back`},
-  {k:'clinch',    g:'defense', side:'none', lvl:3, w:4, open:.6,  close:.4, r:1.4, xr:1.0, label:L=>`clinch`},
-  /* Clinch-range grips. Side is spoken but stays 'none', like the rest
-     of defence, so a grip does not take a turn in the lead/rear rhythm
-     of the striking. Range sits with clinch, which is why the tables
-     below suppress punching out of them. */
-  {k:'leadInWrist',  g:'defense', side:'none', lvl:2, w:2,  open:.8, close:.5, r:1.3, xr:1.0, label:L=>`${L.lead} inside wrist control`},
-  {k:'rearInWrist',  g:'defense', side:'none', lvl:2, w:2,  open:.8, close:.5, r:1.3, xr:1.0, label:L=>`${L.rear} inside wrist control`},
-  {k:'leadOutWrist', g:'defense', side:'none', lvl:2, w:1.5, open:.8, close:.5, r:1.3, xr:1.0, label:L=>`${L.lead} outside wrist control`},
-  {k:'rearOutWrist', g:'defense', side:'none', lvl:2, w:1.5, open:.8, close:.5, r:1.3, xr:1.0, label:L=>`${L.rear} outside wrist control`},
+  // clinch
+  /* Its own group as of 17.5, not a kind of defence. Two reasons, and
+     the second is a bug: clinch work is a thing you choose to drill, so
+     it needs a toggle of its own — and the generator caps defensive
+     moves at two per combo, which the grips were quietly spending. A
+     sequence that clinched and then wanted a wrist control had already
+     used the allowance on the clinch, so the control came out at .15
+     of its weight and usually not at all. Grips were competing with
+     slips and parries for a quota that was never meant for them.
+
+     What lives here is the controlling: entering, gripping, fighting
+     for position, off-balancing, breaking. The strikes thrown from in
+     here stay knees and elbows, so switching those off switches off
+     the knees from the clinch too, which is what you would expect.
+
+     Side is spoken but stays 'none', as in defence, so a grip does not
+     take a turn in the lead/rear rhythm of the striking.
+
+     open:0 is load-bearing on the last four. The generator multiplies
+     by `open` in the first position, so a zero there is a hard rule
+     with no code behind it: you cannot turn, dump, break or push off
+     something you have not got hold of yet. */
+  {k:'clinch',    g:'clinch', side:'none', lvl:3, w:4, open:.6,  close:.4, r:1.4, xr:1.0, label:L=>`clinch`},
+  {k:'leadInWrist',  g:'clinch', side:'none', lvl:2, w:2,  open:.8, close:.5, r:1.3, xr:1.0, label:L=>`${L.lead} inside wrist control`},
+  {k:'rearInWrist',  g:'clinch', side:'none', lvl:2, w:2,  open:.8, close:.5, r:1.3, xr:1.0, label:L=>`${L.rear} inside wrist control`},
+  {k:'leadOutWrist', g:'clinch', side:'none', lvl:2, w:1.5, open:.8, close:.5, r:1.3, xr:1.0, label:L=>`${L.lead} outside wrist control`},
+  {k:'rearOutWrist', g:'clinch', side:'none', lvl:2, w:1.5, open:.8, close:.5, r:1.3, xr:1.0, label:L=>`${L.rear} outside wrist control`},
+  /* grips */
+  {k:'doubleCollar', g:'clinch', side:'none', lvl:2, w:5, open:.7, close:.4, r:1.2, xr:1.0, label:L=>`double collar tie`},
+  {k:'leadCollar',   g:'clinch', side:'none', lvl:2, w:4, open:.7, close:.4, r:1.2, xr:1.0, label:L=>`${L.lead} hand behind the neck`},
+  {k:'rearCollar',   g:'clinch', side:'none', lvl:2, w:4, open:.7, close:.4, r:1.2, xr:1.0, label:L=>`${L.rear} hand behind the neck`},
+  /* Sided, because which glove does the pinning decides which hand is
+     free for the neck — you pin with the lead and the rear goes behind
+     the head, or the mirror of it. */
+  {k:'leadArmPin',   g:'clinch', side:'none', lvl:2, w:4, open:.9, close:.4, r:1.4, xr:1.1, label:L=>`${L.lead} arm pin`},
+  {k:'rearArmPin',   g:'clinch', side:'none', lvl:2, w:4, open:.9, close:.4, r:1.4, xr:1.1, label:L=>`${L.rear} arm pin`},
+  /* One hand stays on the neck and the other goes under his arm. The
+     position you rotate him from, and the reason the second turn goes
+     the other way from the first. */
+  {k:'armScoop',     g:'clinch', side:'none', lvl:3, w:4, open:0, close:.4, r:1.1, xr:1.0, label:L=>`scoop to inside arm control`},
+  /* the position fight — answers to being gripped, so they open like a
+     parry does rather than sitting mid-combo only */
+  {k:'swimIn',       g:'clinch', side:'none', lvl:2, w:4, open:1.3, close:.4, r:1.1, xr:1.0, label:L=>`swim inside`},
+  {k:'frame',        g:'clinch', side:'none', lvl:2, w:3, open:1.2, close:.5, r:1.1, xr:1.3, label:L=>`frame off`},
+  {k:'postureUp',    g:'clinch', side:'none', lvl:2, w:3, open:1.2, close:.5, r:1.1, xr:1.1, label:L=>`posture up`},
+  /* off-balancing and leaving */
+  /* Direction is the whole move, not a detail of it: you rotate him
+     one way and knee, then rotate the other way and knee off the
+     opposite side. One undirected "turn him" could not call that. */
+  {k:'turnLead',     g:'clinch', side:'none', lvl:3, w:4, open:0, close:1.0, r:1.0, xr:1.0, label:L=>`pivot ${L.lead}, turn him`},
+  {k:'turnRear',     g:'clinch', side:'none', lvl:3, w:4, open:0, close:1.0, r:1.0, xr:1.0, label:L=>`pivot ${L.rear}, turn him`},
+  {k:'dump',         g:'clinch', side:'none', lvl:3, w:4, open:0, close:2.2, r:1.0, xr:1.2, label:L=>`turn and dump`},
+  /* The break carries its own strike, so it finishes hard and leaves
+     you back at punching range rather than still attached. */
+  {k:'breakElbow',   g:'clinch', side:'none', lvl:3, w:4, open:0, close:2.4, r:1.0, xr:1.8, label:L=>`break and elbow`},
+  {k:'pushOff',      g:'clinch', side:'none', lvl:2, w:3, open:0, close:1.6, r:1.0, xr:2.4, label:L=>`push off`},
 ];
 CAT.forEach((t,i)=>t.id=i);
 const BY_KEY = Object.fromEntries(CAT.map(t=>[t.k,t]));
@@ -665,11 +719,11 @@ Object.entries(RENAMED).forEach(([old,now])=>{ if(BY_KEY[now]) BY_KEY[old] = BY_
    aren't listed still occur, just rarely. */
 const LINK = {
   jab:       {cross:3.2, jab:1.4, leadHook:1.2, rearLow:1.7, rearBody:1.7, switchKick:1.9, rearTeep:1.3, rearHead:.9, overhand:1.3, crossBody:1.4, leadTeep:.5, leadUpper:.5, skipKnee:1.2, switchHead:.9},
-  cross:     {leadHook:3.2, rearBody:2.8, rearLow:2.6, rearHead:1.5, leadUpper:1.5, rearKnee:1.6, hookBody:1.4, leadElbow:1.3, switchKick:1.3, pivot:1.2, rearHook:.15, leadTeep:.5, rearHookBody:1.1},
+  cross:     {leadHook:3.2, rearBody:2.8, rearLow:2.6, rearHead:1.5, leadUpper:1.5, rearKnee:1.6, hookBody:1.4, leadElbow:1.3, switchKick:1.3, pivot:1.2, rearHook:.15, leadTeep:.5, rearHookBody:1.1, leadArmPin:.9},
   leadHook:  {rearBody:2.8, rearLow:2.4, cross:1.7, rearUpper:1.7, rearKnee:1.6, rearElbow:1.5, rearHook:1.2, spinElbow:1.3, spinBack:1.1, leadHook:.3, switchKick:.7, rearHookBody:1.3},
   rearHook:  {leadHook:2.3, leadUpper:1.5, switchKick:1.5, leadKnee:1.3, leadElbow:1.3, rearBody:.7},
-  leadUpper: {rearHook:2.5, cross:1.7, leadHook:1.3, rearKnee:1.5, rearElbow:1.5, rearUpper:.4},
-  rearUpper: {leadHook:2.7, leadElbow:1.5, leadKnee:1.3, rearBody:1.2, cross:.4},
+  leadUpper: {rearHook:2.5, cross:1.7, leadHook:1.3, rearKnee:1.5, rearElbow:1.5, rearUpper:.4, leadArmPin:1.1, clinch:.9},
+  rearUpper: {leadHook:2.7, leadElbow:1.5, leadKnee:1.3, rearBody:1.2, cross:.4, rearArmPin:1.1, clinch:.9},
   overhand:  {leadHook:2.3, rearLow:1.7, rearBody:1.6, leadUpper:1.3},
   jabBody:   {cross:2.3, rearHead:1.7, leadHook:1.6, overhand:1.5, leadInWrist:1.4},
   crossBody: {leadHook:2.5, rearHead:1.5, rearBody:1.4, leadInWrist:1.8, leadOutWrist:1.2},
@@ -686,13 +740,13 @@ const LINK = {
   switchLow: {cross:1.7, jab:1.5, rearBody:1.0},
   questionMk:{pivot:1.5, jab:1.0},
   spinBack:  {pivot:1.3, jab:1.0},
-  rearKnee:  {leadElbow:1.9, rearElbow:1.6, leadKnee:1.7, leadHook:1.4, clinch:1.2},
-  leadKnee:  {rearElbow:1.9, rearKnee:1.5, cross:1.4, rearHook:1.2},
+  rearKnee:  {leadElbow:1.9, rearElbow:1.6, leadKnee:1.7, leadHook:1.4, clinch:1.2, doubleCollar:1.4, turnLead:1.3, armScoop:1.2, breakElbow:1.3},
+  leadKnee:  {rearElbow:1.9, rearKnee:1.5, cross:1.4, rearHook:1.2, doubleCollar:1.4, turnRear:1.3, armScoop:1.2, breakElbow:1.3},
   skipKnee:  {leadHook:1.5, rearElbow:1.4, cross:1.3},
   rearLongKnee: {leadElbow:1.5, leadHook:1.2, rearKnee:1.3, leadLongKnee:1.1},
   leadLongKnee: {rearElbow:1.5, cross:1.2, leadKnee:1.3, rearLongKnee:1.1},
-  leadElbow: {rearElbow:1.7, rearKnee:1.9, leadUpElbow:1.3, rearHook:1.2},
-  rearElbow: {leadElbow:1.7, rearKnee:1.6, leadKnee:1.5, leadHook:1.4},
+  leadElbow: {rearElbow:1.7, rearKnee:1.9, leadUpElbow:1.3, rearHook:1.2, pushOff:1.0},
+  rearElbow: {leadElbow:1.7, rearKnee:1.6, leadKnee:1.5, leadHook:1.4, pushOff:1.0},
   rearUpElbow:   {leadHook:1.6, leadElbow:1.4, rearKnee:1.4},
   leadUpElbow: {rearKnee:1.6, leadHook:1.4},
   spinElbow: {pivot:1.3, leadHook:1.0},
@@ -719,12 +773,45 @@ const LINK = {
   rearBodyBlock: {leadHook:2.2, jab:1.8, leadKnee:1.5},
   pivot:     {jab:2.1, cross:1.2, rearLow:1.2},
   stepBack:  {leadTeep:2.2, jab:1.7, rearBody:1.3, cross:1.2},
-  clinch:    {rearKnee:3.0, leadKnee:2.5, rearLongKnee:1.9, leadElbow:1.7, jab:.05, cross:.05, rearBody:.05, rearLow:.05, leadLongKnee:1.2, leadInWrist:1.4, rearInWrist:1.4},
+  clinch:    {rearKnee:3.0, leadKnee:2.5, rearLongKnee:1.9, leadElbow:1.7, jab:.05, cross:.05, rearBody:.05, rearLow:.05, leadLongKnee:1.2, leadInWrist:1.4, rearInWrist:1.4,
+              doubleCollar:2.0, leadCollar:1.5, rearCollar:1.5, turnLead:1.2, turnRear:1.2, dump:1.0, breakElbow:1.2},
   /* a grip leads to knees and short elbows, never back out to boxing */
   leadInWrist:  {rearElbow:2.6, rearKnee:2.4, clinch:1.8, leadKnee:1.6, rearLongKnee:1.3, leadElbow:.6, jab:.05, cross:.05, rearBody:.05, rearLow:.05},
   rearInWrist:  {leadElbow:2.6, leadKnee:2.4, clinch:1.8, rearKnee:1.6, leadLongKnee:1.3, rearElbow:.6, jab:.05, cross:.05, rearBody:.05, rearLow:.05},
-  leadOutWrist: {rearElbow:2.2, rearKnee:2.0, clinch:1.7, leadLongKnee:1.4, jab:.05, cross:.05, rearBody:.05, rearLow:.05},
-  rearOutWrist: {leadElbow:2.2, leadKnee:2.0, clinch:1.7, rearLongKnee:1.4, jab:.05, cross:.05, rearBody:.05, rearLow:.05},
+  leadOutWrist: {rearElbow:2.2, rearKnee:2.0, clinch:1.7, leadLongKnee:1.4, jab:.05, cross:.05, rearBody:.05, rearLow:.05, turnLead:1.3, turnRear:1.3, dump:1.2},
+  rearOutWrist: {leadElbow:2.2, leadKnee:2.0, clinch:1.7, rearLongKnee:1.4, jab:.05, cross:.05, rearBody:.05, rearLow:.05, turnLead:1.3, turnRear:1.3, dump:1.2},
+
+  /* Same rule as the wrist controls above: once you have hold of
+     something, knees and short elbows are what is available and boxing
+     is not, so the punches sit at .05 rather than being absent — a
+     missing key only costs .40, which is not nearly discouraging
+     enough. The grips also feed each other, because improving the grip
+     is most of what clinching is. */
+  doubleCollar: {rearKnee:3.0, leadKnee:2.6, rearLongKnee:1.8, leadLongKnee:1.5, turnLead:1.8, turnRear:1.8, dump:1.8, breakElbow:1.6, leadElbow:1.2, rearElbow:1.2, jab:.05, cross:.05, rearBody:.05, rearLow:.05},
+  leadCollar:   {rearKnee:2.8, doubleCollar:2.0, turnRear:1.9, turnLead:1.4, armScoop:1.6, dump:1.6, rearElbow:1.4, breakElbow:1.5, leadKnee:1.4, jab:.05, cross:.05, rearBody:.05, rearLow:.05},
+  rearCollar:   {leadKnee:2.8, doubleCollar:2.0, turnLead:1.9, turnRear:1.4, armScoop:1.6, dump:1.6, leadElbow:1.4, breakElbow:1.5, rearKnee:1.4, jab:.05, cross:.05, rearBody:.05, rearLow:.05},
+  /* Pinning an arm is how you get in before you get the neck, which is
+     the order you drilled it in. */
+  /* A pin with one glove frees the other for the neck, so it leads to
+     the collar tie on the OPPOSITE side far more than its own. */
+  leadArmPin:   {rearCollar:2.8, doubleCollar:1.6, leadCollar:.8, rearKnee:1.8, rearElbow:1.5, armScoop:1.4, clinch:1.3, jab:.05, cross:.05, rearBody:.05, rearLow:.05},
+  rearArmPin:   {leadCollar:2.8, doubleCollar:1.6, rearCollar:.8, leadKnee:1.8, leadElbow:1.5, armScoop:1.4, clinch:1.3, jab:.05, cross:.05, rearBody:.05, rearLow:.05},
+  /* Both hands busy: rotate, knee, or give it up and break. */
+  armScoop:     {turnLead:2.2, turnRear:2.2, rearKnee:2.0, leadKnee:2.0, dump:1.6, breakElbow:1.4, jab:.05, cross:.05, rearBody:.05, rearLow:.05},
+  swimIn:       {doubleCollar:2.4, rearCollar:1.8, leadCollar:1.8, rearKnee:1.6, turnLead:1.3, turnRear:1.3, armScoop:1.5, clinch:1.3, jab:.05, cross:.05, rearBody:.05, rearLow:.05},
+  /* Framing and posturing make room, so unlike the grips they do lead
+     back out — that is the whole point of them. */
+  frame:        {pushOff:2.2, postureUp:1.6, swimIn:1.4, rearKnee:1.3, leadElbow:1.2, breakElbow:1.1},
+  postureUp:    {swimIn:2.0, pushOff:1.8, doubleCollar:1.5, rearKnee:1.4, frame:1.2},
+  /* Turning him opens the knee on the side you turned toward, and the
+     scoop is how you set up the turn back the other way. */
+  turnLead:     {leadKnee:2.6, rearKnee:2.0, armScoop:1.8, dump:1.8, breakElbow:1.6, leadLongKnee:1.3, turnRear:.4, jab:.05, cross:.05, rearBody:.05, rearLow:.05},
+  turnRear:     {rearKnee:2.6, leadKnee:2.0, armScoop:1.8, dump:1.8, breakElbow:1.6, rearLongKnee:1.3, turnLead:.4, jab:.05, cross:.05, rearBody:.05, rearLow:.05},
+  /* He is off his feet or off his line; you are close and free. */
+  dump:         {rearKnee:2.0, breakElbow:1.6, leadElbow:1.4, pushOff:1.2, rearLow:.8, cross:.5},
+  /* Both of these leave the clinch, so boxing is open again. */
+  breakElbow:   {cross:1.8, leadHook:1.6, rearLow:1.5, jab:1.3, rearBody:1.2, pivot:1.1},
+  pushOff:      {leadTeep:2.0, jab:1.8, rearTeep:1.5, cross:1.3, rearLow:1.2, rearBody:1.2},
 };
 
 /* ══ combos coaches actually call ══════════════════════════════ */
@@ -776,6 +863,35 @@ const LIB = [
   {lvl:2, k:['jab','cross','leadHook','rearUpper','leadHook','rearBody']},
   {lvl:2, k:['rearBody','cross','leadHook','rearBody']},
   {lvl:3, k:['clinch','rearKnee','leadKnee','leadElbow']},
+  /* Clinch sequences, kept short on purpose. A library combo is only
+     offered when its length falls inside the block's own min and max,
+     so at the usual 2–4 anything longer would simply never be called.
+     These are fragments that chain — get hold, do damage, leave — and
+     the full ten-step version you drilled lives at the bottom for when
+     the range is opened up. */
+  {lvl:2, k:['doubleCollar','rearKnee','leadKnee']},
+  {lvl:2, k:['swimIn','doubleCollar','rearKnee']},
+  {lvl:2, k:['leadArmPin','rearCollar','breakElbow']},
+  {lvl:2, k:['jab','cross','leadArmPin','rearCollar']},
+  {lvl:2, k:['frame','pushOff','leadTeep']},
+  {lvl:3, k:['doubleCollar','turnLead','leadKnee','dump']},
+  {lvl:3, k:['rearCollar','turnLead','leadKnee','breakElbow']},
+  {lvl:3, k:['clinch','rearKnee','dump']},
+  {lvl:3, k:['postureUp','swimIn','doubleCollar','rearKnee']},
+  /* The turn-and-turn-back, which is the shape of the whole drill in
+     four calls: rotate one way and knee, scoop, rotate the other way. */
+  {lvl:3, k:['rearCollar','turnRear','leadKnee','armScoop']},
+  {lvl:3, k:['armScoop','turnLead','rearKnee','breakElbow']},
+  /* 2 Nov, with pads, as you corrected it. Punches, he reaches in,
+     lead glove pins the arm to the body while the rear takes the neck;
+     pivot out rear and rotate him, knee off the lead twice; scoop under
+     for inside arm control with the neck still held; pivot back the
+     other way, pulling with the neck and pushing with the arm, knee off
+     the rear twice; break the neck control and elbow him on the way out.
+     Fourteen calls, so it only comes up with the range opened well past
+     the usual 2–4. */
+  {lvl:3, k:['jab','cross','leadUpper','cross','leadArmPin','rearCollar','turnRear',
+             'leadKnee','leadKnee','armScoop','turnLead','rearKnee','rearKnee','breakElbow']},
   // {lvl:3, k:['jab','cross','questionMk']},
   {lvl:3, k:['rearLow','rearLow','rearHead']},
   // {lvl:3, k:['jab','cross','leadHook','spinElbow']},
@@ -850,8 +966,16 @@ function generatedCombo(F){
       if(t.g === 'defense'){
         if(defCount >= 2) w = 0;
         else if(defCount >= 1) w *= .15;
-        if(last && t.close < 1) w *= .3;
       }
+      /* You finish FROM a hold, not ON one — a combo ending on "double
+         collar tie" tells you to grab and then stop. The exits carry
+         close > 1 and are deliberately untouched, so turn and dump,
+         break and elbow and push off still finish hard. Defence keeps
+         the same rule it always had; it has only moved out of the
+         block above so that clinch can share it without also
+         inheriting the two-per-combo cap, which is what was quietly
+         throttling the grips. */
+      if((t.g === 'defense' || t.g === 'clinch') && last && t.close < 1) w *= .3;
       return {t, w};
     }).filter(x=>x.w > 0.0001);
 
@@ -888,7 +1012,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '17.3';
+const APP_VERSION = '17.5';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -979,7 +1103,7 @@ const PARA_TYPES = {
     defaults:()=>({kind:'guided', label:'Bag work',
       rounds:1, roundLen:180, breakLen:60,
       source:'mixed', order:'inorder', combos:[],
-      groups:{punch:true,kick:true,knee:true,elbow:false,defense:false},
+      groups:{punch:true,kick:true,knee:true,elbow:false,defense:false,clinch:false},
       level:2, min:2, max:4, rest:4, gap:.1}),
     fields:[
       {kind:'section', label:'Rounds'},
@@ -1016,7 +1140,7 @@ const PARA_TYPES = {
       {kind:'multi', key:'groups', label:'Techniques', min:1,
        when:b=>b.source !== 'script',
        options:[['punch','Punches'],['kick','Kicks'],['knee','Knees'],
-                ['elbow','Elbows'],['defense','Defense']]},
+                ['elbow','Elbows'],['defense','Defense'],['clinch','Clinch']]},
     ],
     summary:b=>{
       const r = +b.rounds === 0 ? 'Endless'
@@ -1475,6 +1599,17 @@ const TITLES = {home:'BETR', stats:'Stats', settings:'Settings', newtype:'Add ne
    lit on a screen that sits underneath one. */
 const ROOT_RENDER = {};
 const TAB_OF = {};
+/* What the header's + makes on a given screen, so one button can mean
+   "add the kind of thing this screen lists" without the shell knowing
+   which screens exist. A screen with nothing to add registers nothing
+   and the + hides itself there.
+
+   Deliberately root screens only. The dashed buttons inside an editor —
+   add a movement, a block, a combo — stay where they are: they append
+   to the list sitting right above them, and a header control that
+   sometimes extends a sub-list inside a form is a different promise
+   from one that creates a top-level thing. */
+const ROOT_ADD = {};
 /* A screen that shows one particular thing has to say which thing, or
    Back cannot put it back. ORIGIN_KEY reads that identifier when the
    screen is covered; ORIGIN_OPEN reopens it. Without a pair here, a
@@ -1966,6 +2101,11 @@ function show(name){
   const rooted = ROOTS.includes(name);
   el('back').hidden = rooted;
   el('back').textContent = (name === 'editor') ? '✕' : '‹';
+  /* Hidden wherever nothing has claimed it, rather than left to turn up
+     on Stats, Settings or mid-edit with nothing to do. */
+  const add = ROOT_ADD[name];
+  el('addNew').hidden = !add;
+  if(add) el('addNew').setAttribute('aria-label', add.label);
   el('title').textContent = name === 'editor' && editing && editing.isNew ? 'Add new' : (TITLES[name] || 'BETR');
   /* Which tab stays lit: itself if it is one, the tab that owns it if a
      module claimed it, none during a session, otherwise Exercises. */
@@ -1987,6 +2127,11 @@ const resetAccent = ()=>{
   document.documentElement.style.removeProperty('--accent');
   document.documentElement.style.removeProperty('--on-accent');
 };
+ROOT_ADD.home = {label:'Add an exercise', go:()=>{ renderTypes(); show('newtype'); }};
+el('addNew').addEventListener('click', ()=>{
+  const a = ROOT_ADD[screen];
+  if(a) a.go();
+});
 el('back').addEventListener('click', ()=>{
   if(screen === 'log') return popOrigin();
   if(BACKTO[screen]){
@@ -2017,18 +2162,35 @@ el('nav').addEventListener('click', e=>{
 });
 
 /* ══ screen: home ══════════════════════════════════════════════ */
-function balanceBlock(){
-  const a = weekStart(new Date()), b = addDays(a, 7);
-  const wk = sessionsIn(a,b);
-  const per = BALANCE_CATS.map(c=>({c, m: mins(wk.filter(s=>s.category === c.id))}));
-  const peak = Math.max(1, ...per.map(p=>p.m));
+/* Moved off the home screen, where it was the first thing on the page
+   and sat above the list the app is opened for. It now answers the
+   question it was always for — am I lopsided — against the window you
+   are already looking at, so last week reads too. On home it could only
+   ever say "this week", which is the half of the question that needs
+   no deciding.
+
+   Stats already had a Body vs Mind entry in the activity list, but that
+   only recuts the bars; the two totals existed nowhere on the page.
+
+   It follows the Time/Sessions switch, since that choice is two rows
+   above it, and steps aside once one activity is picked: filtered to
+   Muay Thai, "Mind —" is not a balance, it is an artefact of the
+   filter. Upkeep stays out, as it does everywhere else. */
+function balanceBlock(w){
+  if(statType !== 'all' && statType !== 'cat:both') return '';
+  const list = sessionsIn(w.from, w.to).filter(s=>!isUpkeep(s));
+  const byTime = statMeasure === 'time';
+  const per = BALANCE_CATS.map(c=>{
+    const mine = list.filter(s=>(s.category || typeOf(s.type).category) === c.id);
+    return {c, n: byTime ? mins(mine) : mine.length};
+  });
+  const peak = Math.max(1, ...per.map(p=>p.n));
   return `<div class="balance">
-    <p class="eyebrow">This week</p>
     ${per.map(p=>`<div class="bal">
       <span class="dot" style="background:${p.c.color}"></span>
-      <span class="lab">${p.c.id === 'physical' ? 'Body' : 'Mind'}</span>
-      <span class="track"><i style="width:${(p.m/peak)*100}%;background:${p.c.color}"></i></span>
-      <span class="amt">${p.m ? hhmm(p.m*60) : '—'}</span>
+      <span class="lab">${esc(p.c.name)}</span>
+      <span class="track"><i style="width:${(p.n/peak)*100}%;background:${p.c.color}"></i></span>
+      <span class="amt">${p.n ? (byTime ? hhmm(p.n*60) : String(p.n)) : '—'}</span>
     </div>`).join('')}
   </div>`;
 }
@@ -2202,6 +2364,22 @@ function renderHome(){
      A second key, because the first was already spent moving the other
      way and a device that has seen it would never be migrated again. */
   if(!G.audioPlayback){ G.audioMode = 'playback'; G.audioPlayback = 1; saveGlobal(); }
+  /* Clinch left the defence group in 17.5. A paragraph saved before
+     that has no clinch key at all, and an absent key reads as off — so
+     without this, every node with defence on would quietly stop calling
+     the grips it had been calling, with nothing to say why. Inheriting
+     the defence setting leaves every existing node sounding exactly as
+     it did; the two can be set apart from here on. Keyed, so a device
+     that has seen it is never migrated twice. */
+  if(!G.clinchSplit){
+    exercises.forEach(e=>{
+      if(!e || e.type !== 'muaythai' || !e.cfg) return;
+      (e.cfg.paragraphs || []).forEach(b=>{
+        if(b && b.groups && b.groups.clinch === undefined) b.groups.clinch = !!b.groups.defense;
+      });
+    });
+    G.clinchSplit = 1; saveGlobal(); saveEx();
+  }
   const sections = CATS.map(c=>{
     const list = exercises.filter(e=>e.category === c.id && isLive(e));
     const head = `<h2 class="grp">${esc(c.name)}</h2>`;
@@ -2250,8 +2428,7 @@ function renderHome(){
          <button data-s="az" aria-pressed="${G.sort === 'az'}">A–Z</button>
        </div></div>`
     : '';
-  el('homeBody').innerHTML = backupNag() + mantraBlock() + todayBlock() + balanceBlock() + sortBar + sections
-    + `<button class="addbtn" id="newEx">+ Add new</button>` + shelf;
+  el('homeBody').innerHTML = backupNag() + mantraBlock() + todayBlock() + sortBar + sections + shelf;
 }
 el('homeBody').addEventListener('input', e=>{
   if(e.target.id === 'mantraEdit'){ G.mantra = e.target.value; saveGlobal(); }
@@ -2291,7 +2468,6 @@ el('homeBody').addEventListener('click', e=>{
     saveGlobal(); renderHome();
     return;
   }
-  if(e.target.closest('#newEx')){ renderTypes(); return show('newtype'); }
   const b = e.target.closest('[data-e]'); if(!b) return;
   pushOrigin();
   if(b.classList.contains('today')){
@@ -3797,7 +3973,8 @@ function exerciseSection(w){
         : typeBreakdown(list))
     : '';
 
-  return sectionRow('Exercises', 'statType', opts, statType)
+  return balanceBlock(w)
+    + sectionRow('Exercises', 'statType', opts, statType)
     + totalsBlock(list, statType === 'all' ? 'training' : statType, !!bucket)
     + (bucket
         /* No close button: the bar you tapped closes it, and so does a
@@ -6768,7 +6945,7 @@ function paintCurrent(){
 }
 function paintCombo(){
   const L = cmbSides();
-  const groups = [['punch','Punches'],['kick','Kicks'],['knee','Knees'],['elbow','Elbows'],['defense','Defence']];
+  const groups = [['punch','Punches'],['kick','Kicks'],['knee','Knees'],['elbow','Elbows'],['defense','Defence'],['clinch','Clinch']];
   el('comboBody').innerHTML =
     groups.map(([g,label])=>`
       <h2 class="sec">${label}</h2>
@@ -7169,6 +7346,7 @@ ROOTS.push('meals');
 /* the brand yellow, not whatever exercise was last open — a meal is not
    an activity and must not borrow an activity's colour */
 ROOT_RENDER.meals = ()=>{ resetAccent(); renderMeals(); };
+ROOT_ADD.meals = {label:'Add a meal', go:()=>{ pushOrigin(); openMealEdit(null); }};
 TAB_OF.meal = 'meals';
 TAB_OF.mealedit = 'meals';
 /* Without these, Back falls through to the home screen — the router
@@ -7213,7 +7391,11 @@ function renderMeals(){
     }).join('');
   }).join('');
 
-  body.innerHTML = headHTML() + groups + `<button class="addbtn" id="addMeal">+ Add meal</button>`;
+  /* No dashed button under the list: the header + makes a meal now, and
+     a second way to do it at the bottom of a long list was the thing
+     that moved. The empty state keeps its own, because there the button
+     is the whole page rather than a duplicate of the header. */
+  body.innerHTML = headHTML() + groups;
   if(goalOpen) wireGoal();
 }
 
