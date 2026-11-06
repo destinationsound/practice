@@ -474,7 +474,6 @@
     </div>
 
     <div id="statBody"></div>
-    <button class="ghost danger" id="clearlog">Clear all history</button>
   </div></section>
 
   <section class="screen" id="s-settings"><div class="scroll">
@@ -1023,7 +1022,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '17.7';
+const APP_VERSION = '17.9';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -2074,6 +2073,32 @@ const ROOTS = ['home','stats','settings'];
 let originStack = [];
 let lastRoot = 'home';
 
+/* Where each screen was left, so Back and Save put you back where you
+   were instead of at the top of a list you then scroll again. Add a
+   block to a circuit and save, and the editor reopens at the block you
+   were working on.
+
+   Keyed by what the screen was showing, not just its name, because a
+   different exercise is a different page and starts at the top. Only
+   the screens that show one particular thing need a key; everything
+   else keys on its name alone, which matters because `cur` may already
+   have moved on to whatever you are opening by the time we record the
+   screen you are leaving. That is also why the key is captured on the
+   way in and reused on the way out rather than recomputed — recomputing
+   it would file the old screen's position under the new screen's
+   subject.
+
+   This lives in show() alone, so an ordinary re-render — the home list
+   redrawing after a tick — never fights it. */
+const scrollMem = {};
+const SCROLL_KEY = {
+  editor:   ()=> (editing && editing.ex) ? editing.ex.id : '',
+  exercise: ()=> cur ? cur.id : '',
+};
+const scrollKey = name => name + '|' + (SCROLL_KEY[name] ? SCROLL_KEY[name]() : '');
+let heldScrollKey = null;
+const scrollerOf = name => { const s = el('s-' + name); return s && s.querySelector('.scroll'); };
+
 function pushOrigin(){
   const next = {screen, exId: cur ? cur.id : null,
                 key: ORIGIN_KEY[screen] ? ORIGIN_KEY[screen]() : null};
@@ -2111,6 +2136,10 @@ function goRoot(which){
 let screen = 'home', cur = null, editing = null;
 
 function show(name){
+  if(heldScrollKey){
+    const leaving = scrollerOf(screen);
+    if(leaving) scrollMem[heldScrollKey] = leaving.scrollTop;
+  }
   screen = name;
   document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('on', s.id === 's'+'-'+name));
   const sec = el('s'+'-'+name);
@@ -2132,8 +2161,9 @@ function show(name){
   });
   if(ROOTS.includes(name)) lastRoot = name;
   if(name !== 'home' && name !== 'log' && name !== 'exercise') dayOffset = 0;
-  const sc = el('s-'+name).querySelector('.scroll');
-  if(sc) sc.scrollTop = 0;
+  heldScrollKey = scrollKey(name);
+  const sc = scrollerOf(name);
+  if(sc) sc.scrollTop = scrollMem[heldScrollKey] || 0;
 }
 function setAccent(typeId){
   const t = typeOf(typeId);
@@ -4295,13 +4325,13 @@ el('statMeas').addEventListener('click', e=>{
   setChips('statMeas', x=>x === b);
   statMeasure = b.dataset.m; renderStats();
 });
-el('clearlog').addEventListener('click', e=>{
-  const btn = e.currentTarget;
-  if(!sessions.length) return;
-  confirmTap(btn, 'Tap again to erase everything', 'Clear all history', ()=>{
-    sessions = []; sessionsChanged();
-  });
-});
+/* Clear all history was removed in 17.9. Two taps at the foot of a page
+   you open to read, with nothing between them and every session you
+   have ever recorded — and no way back, since the sessions it emptied
+   were the thing a backup would have been made from. Individual
+   sessions are still deletable one at a time from the session editor,
+   which is the only version of this anyone needs. Restoring the whole
+   log from a backup remains the way to start over. */
 
 /* ══ manual logging and session editing ═══════════════════════
    A logged session is the same record as one the app drove — it
