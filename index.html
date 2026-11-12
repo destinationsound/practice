@@ -1022,7 +1022,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '17.9';
+const APP_VERSION = '18.0';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -1112,7 +1112,7 @@ const PARA_TYPES = {
        not a different kind of work. Zero means endless. */
     defaults:()=>({kind:'guided', label:'Bag work',
       rounds:1, roundLen:180, breakLen:60,
-      source:'mixed', order:'inorder', combos:[],
+      source:'mixed', order:'inorder', combos:[], call:'read', pace:1,
       groups:{punch:true,kick:true,knee:true,elbow:false,defense:false,clinch:false},
       level:2, min:2, max:4, rest:4, gap:.1}),
     fields:[
@@ -1135,6 +1135,29 @@ const PARA_TYPES = {
       {kind:'note', text:'Set combos come from a list a coach would call. Freestyle builds new ones from which strikes actually feed into each other. Mixed alternates. Your combos calls only what you have written.'},
       {kind:'chips', key:'order', label:'Order', when:b=>b.source === 'script',
        options:[['inorder','In order'],['mix','Mix']]},
+      /* Only your own combos can be shortened to a name or a beep. A
+         generated one has to be read, because you cannot recall a
+         sequence you have never heard — which is also why the engine
+         sources stay useful after you have learned everything you
+         wrote.
+
+         Reading a ten-move combo takes about fifteen seconds and you
+         can throw it in seven, so by the second round the voice is
+         slower than you are and you are standing still waiting for it.
+         Naming it costs under a second; a beep costs none. */
+      {kind:'chips', key:'call', label:'How to call them', when:b=>b.source === 'script',
+       options:[['read','Read them out'],['name','Name them'],['beep','Beep them']]},
+      {kind:'note', when:b=>b.source === 'script',
+       text:'Read them out while a combo is new. Once you know it, Name them calls “combo one”, and Beep them just counts it out — one beep for the first, two for the second. Both leave the working time to you.'},
+      /* With the voice gone, nothing fills the time the combo takes, so
+         the window has to be bought instead of borrowed — and a
+         ten-move combo needs more of it than a seven-move one. Scaling
+         by length means one setting is right for every combo in the
+         block, which is what keeps this off the combos themselves:
+         they are stored as bare lists of ids with nowhere to put a
+         field. */
+      {kind:'slider', key:'pace', label:'Time per strike', min:.3, max:3, step:.1,
+       fmt:v=>v.toFixed(1)+'s', when:b=>b.source === 'script' && b.call !== 'read'},
 
       {kind:'slider', key:'min', label:'Shortest combo', min:1, max:6, step:1,
        when:b=>b.source !== 'script', after:b=>{ if(b.max < b.min) b.max = b.min; }},
@@ -1156,8 +1179,12 @@ const PARA_TYPES = {
       const r = +b.rounds === 0 ? 'Endless'
         : (+b.rounds || 1) > 1 ? `${+b.rounds} × ${fmt(b.roundLen)}` : fmt(b.roundLen);
       const n = (b.combos || []).length;
+      /* How they are called only shows when it is not the default —
+         a row that says "read out" on every block teaches nothing. */
+      const how = (b.source === 'script' && b.call && b.call !== 'read')
+        ? ` · ${b.call === 'beep' ? 'beeped' : 'named'}` : '';
       return `Bag work · ${r} · ${b.source === 'script'
-        ? `${n} combo${n === 1 ? '' : 's'}` : SRC_NAME[b.source] || 'Mixed'}`;
+        ? `${n} combo${n === 1 ? '' : 's'}${how}` : SRC_NAME[b.source] || 'Mixed'}`;
     },
     length:b=>{
       const r = +b.rounds || 1;
@@ -2962,6 +2989,26 @@ function setChips(id, test){
 
 /* ══ audio ═════════════════════════════════════════════════════ */
 let actx = null;
+/* A tempo cue, not a bell. The bowl above rings for a second and a
+   half, which is right for the end of a round and useless for "go now"
+   — two of them would smear into one another and you could not count
+   them. This is short enough that three in a row still read as three,
+   and pitched to cut through a gym without being shrill. */
+function cue(hits=1){
+  try{
+    if(!actx) return;
+    for(let h=0; h<hits; h++){
+      const t0 = actx.currentTime + h*0.17;
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = 'triangle'; o.frequency.value = 988;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.26, t0+0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0+0.09);
+      o.connect(g).connect(audioOut());
+      o.start(t0); o.stop(t0+0.12);
+    }
+  }catch(e){}
+}
 function bell(hits=1){
   try{
     if(!actx) return;
@@ -7169,13 +7216,11 @@ TYPES.muaythai.runParagraphs = async function(tok){
 /* Your own combos get called as written; every other source goes to the
    engine with this paragraph's own settings. */
 async function callParaCombo(tok, b, n){
-  let combo;
+  let combo, idx = -1;
   if(b.source === 'script' && (b.combos || []).length){
     const list = b.combos;
-    const ids = (b.order === 'mix')
-      ? list[Math.floor(Math.random() * list.length)]
-      : list[n % list.length];
-    combo = comboFromIds(ids);
+    idx = (b.order === 'mix') ? Math.floor(Math.random() * list.length) : n % list.length;
+    combo = comboFromIds(list[idx]);
   } else {
     combo = buildCombo(b);
   }
@@ -7184,6 +7229,35 @@ async function callParaCombo(tok, b, n){
   if(!live) return;
   live.combos++; live.strikes += combo.length;
   const L = sides();
+
+  /* Called short: the combo is one you wrote and already know, so it is
+     announced rather than walked through, and the time that reading it
+     used to eat becomes time to work. idx is -1 for anything the engine
+     produced, which is what keeps generated combos on the long path
+     regardless of this setting.
+
+     The combo still goes up on screen — the point is not to withhold
+     it, only to stop spending your round saying it. */
+  if(idx >= 0 && (b.call === 'name' || b.call === 'beep')){
+    await gate();
+    if(!goOn(tok)) return;
+    if(b.call === 'beep') cue(idx + 1);
+    else await say('Combo ' + (idx + 1));
+    if(!goOn(tok)) return;
+    const work = Math.max(1, combo.length * (+b.pace || 1)) * 1000;
+    el('statusL').textContent = 'Throw it';
+    const wc = countdown(work);
+    while(goOn(tok) && !wc.done()){
+      await wait(80);
+      el('statusR').textContent = (wc.left()/1000).toFixed(1);
+      setRopeAt(wc.left()/work);
+    }
+    if(!goOn(tok)) return;
+    el('statusR').textContent = '';
+    setRopeAt(0);
+    return restAfterCombo(tok, b);
+  }
+
   for(let i = 0; i < combo.length; i++){
     await gate();
     if(!goOn(tok)) return;
@@ -7212,6 +7286,12 @@ async function callParaCombo(tok, b, n){
     }
   }
   highlight(-1);
+  return restAfterCombo(tok, b);
+}
+
+/* Lifted out so both deliveries end the same way — the reset between
+   combos is the same reset whether the combo was read or beeped. */
+async function restAfterCombo(tok, b){
   el('statusL').textContent = 'Reset';
   const rest = (+b.rest || 4) * 1000;
   const cd = countdown(rest);
