@@ -1022,7 +1022,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '18.2';
+const APP_VERSION = '18.3';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -3044,16 +3044,27 @@ function cue(hits=1){
        generated correctly and simply could not be heard — 120ms of one
        bare tone is below what a phone speaker renders as a sound you
        notice across a room. */
+    /* The hold at full gain is the whole trick, and leaving it out is
+       why the first two attempts could not be heard. An exponential
+       ramp straight down spends almost all its energy in the first few
+       milliseconds — rendered and measured, the 280ms version carried
+       half the bell's energy over its first 300ms and was audible for
+       0.16s against the bell's 0.91s. It peaked HIGHER than the bell,
+       which is what made it look fine: peak amplitude says nothing
+       about whether a short sound is loud. Holding the peak for 100ms
+       before letting it fall puts the energy back. */
     for(let h=0; h<hits; h++){
       [640, 962].forEach((f,i)=>{
         const o = actx.createOscillator(), g = actx.createGain();
-        const t0 = actx.currentTime + h*0.30;
-        o.type = 'triangle'; o.frequency.value = f;
+        const t0 = actx.currentTime + h*0.34;
+        const pk = i ? 0.22 : 0.55;
+        o.type = 'sine'; o.frequency.value = f;
         g.gain.setValueAtTime(0.0001, t0);
-        g.gain.exponentialRampToValueAtTime(i ? 0.18 : 0.45, t0+0.005);
-        g.gain.exponentialRampToValueAtTime(0.0001, t0+0.28);
+        g.gain.exponentialRampToValueAtTime(pk, t0+0.008);
+        g.gain.setValueAtTime(pk, t0+0.10);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0+0.50);
         o.connect(g).connect(audioOut());
-        o.start(t0); o.stop(t0+0.32);
+        o.start(t0); o.stop(t0+0.54);
       });
     }
   }catch(e){}
