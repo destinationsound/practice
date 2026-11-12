@@ -1022,7 +1022,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '18.1';
+const APP_VERSION = '18.2';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -3031,15 +3031,30 @@ let actx = null;
 function cue(hits=1){
   try{
     if(!actx) return;
+    /* The app's own bell, clipped. Same two partials as bell() above,
+       same envelope shape — only the decay is a fifth of the length.
+
+       It is not simply bell() because the bell's counts already mean
+       something: one strike opens a round, two close it. A combo cued
+       with one or two full strikes would be the same sound as the
+       round structure it sits inside. Shortening it keeps the sound
+       recognisably this app's while making it a different event.
+
+       And it is not the thin 988Hz blip I tried first, which was
+       generated correctly and simply could not be heard — 120ms of one
+       bare tone is below what a phone speaker renders as a sound you
+       notice across a room. */
     for(let h=0; h<hits; h++){
-      const t0 = actx.currentTime + h*0.17;
-      const o = actx.createOscillator(), g = actx.createGain();
-      o.type = 'triangle'; o.frequency.value = 988;
-      g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(0.26, t0+0.004);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0+0.09);
-      o.connect(g).connect(audioOut());
-      o.start(t0); o.stop(t0+0.12);
+      [640, 962].forEach((f,i)=>{
+        const o = actx.createOscillator(), g = actx.createGain();
+        const t0 = actx.currentTime + h*0.30;
+        o.type = 'triangle'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(i ? 0.18 : 0.45, t0+0.005);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0+0.28);
+        o.connect(g).connect(audioOut());
+        o.start(t0); o.stop(t0+0.32);
+      });
     }
   }catch(e){}
 }
