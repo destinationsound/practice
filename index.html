@@ -1022,7 +1022,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '18.0';
+const APP_VERSION = '18.1';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -1156,8 +1156,15 @@ const PARA_TYPES = {
          block, which is what keeps this off the combos themselves:
          they are stored as bare lists of ids with nowhere to put a
          field. */
-      {kind:'slider', key:'pace', label:'Time per strike', min:.3, max:3, step:.1,
-       fmt:v=>v.toFixed(1)+'s', when:b=>b.source === 'script' && b.call !== 'read'},
+      /* `b.call || 'read'` rather than `b.call`: a block saved before
+         18.0 has no call key, and an absent key read literally is not
+         'read', which showed this field on every old script block and
+         then handed its formatter an undefined to call toFixed on.
+         The default lives here as well as in the migration because a
+         field should not depend on a migration having run. */
+      {kind:'slider', key:'pace', label:'Time per strike', min:.3, max:3, step:.1, def:1,
+       fmt:v=>(+v || 1).toFixed(1)+'s',
+       when:b=>b.source === 'script' && (b.call || 'read') !== 'read'},
 
       {kind:'slider', key:'min', label:'Shortest combo', min:1, max:6, step:1,
        when:b=>b.source !== 'script', after:b=>{ if(b.max < b.min) b.max = b.min; }},
@@ -2445,6 +2452,21 @@ function renderHome(){
      the defence setting leaves every existing node sounding exactly as
      it did; the two can be set apart from here on. Keyed, so a device
      that has seen it is never migrated twice. */
+  /* call and pace arrived in 18.0, and a paragraph saved before it has
+     neither. loadCfg merges defaults at the top level only — paragraphs
+     is replaced wholesale — so nothing hands an old block the new keys,
+     which is the same gap the clinch split had. */
+  if(!G.callModes){
+    exercises.forEach(e=>{
+      if(!e || e.type !== 'muaythai' || !e.cfg) return;
+      (e.cfg.paragraphs || []).forEach(b=>{
+        if(!b || b.kind !== 'guided') return;
+        if(b.call == null) b.call = 'read';
+        if(b.pace == null) b.pace = 1;
+      });
+    });
+    G.callModes = 1; saveGlobal(); saveEx();
+  }
   if(!G.clinchSplit){
     exercises.forEach(e=>{
       if(!e || e.type !== 'muaythai' || !e.cfg) return;
@@ -2817,7 +2839,19 @@ function wireFields(defs, cfg, onChange, host){
   defs.forEach(f=>{
     if(f.kind === 'slider'){
       const input = el(fieldId(f));
-      const paint = ()=>{ input.value = f.fmt ? f.fmt(cfg[f.key]) : String(cfg[f.key]); };
+      /* A config saved before this field existed has no value for it,
+         and handing a formatter undefined breaks the whole editor
+         rather than one row. A migration fixes the data already here;
+         this covers the case a migration cannot — importing an old
+         backup after the one-time migration has already run. `min` is
+         the fallback of last resort because it is the only number the
+         field itself is sure of; a field whose minimum is not a sane
+         default declares `def`. */
+      const paint = ()=>{
+        let v = cfg[f.key];
+        if(v == null || isNaN(+v)) v = cfg[f.key] = (f.def != null ? f.def : f.min);
+        input.value = f.fmt ? f.fmt(v) : String(v);
+      };
       painters.push(paint); paint();
       const apply = v=>{
         const stepped = Math.round(v / f.step) * f.step;
