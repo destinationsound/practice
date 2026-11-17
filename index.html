@@ -1022,7 +1022,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '18.4';
+const APP_VERSION = '18.5';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -8144,6 +8144,24 @@ async function keepAwake(){
 let gen = 0;
 /* Closes a context this module has orphaned. Takes it by value, since
    by now the module's own handle has moved on or been nulled. */
+/* Web Audio holds every scheduled change on one timeline, so a new
+   setTarget does not supersede a ramp that is still pending — the ramp
+   resumes when its time comes and wins. Pressing Stop two seconds into
+   the fade-in therefore faded IN, and the teardown 800ms later cut the
+   sound at full volume instead of after a fade.
+
+   So anything that moves the volume out of band first clears what is
+   booked and pins where the sound actually is. cancelAndHoldAtTime
+   does both; the fallback reads the live value and re-states it, which
+   matters because cancelling alone would snap back to the last
+   explicitly set value rather than staying where you can hear it. */
+function holdGainNow(p, t){
+  try{
+    if(p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(t);
+    else { const v = p.value; p.cancelScheduledValues(t); p.setValueAtTime(v, t); }
+  }catch(e){ try{ p.cancelScheduledValues(t); }catch(e2){} }
+}
+
 function scrap(ctx, src){
   try{ if(src){ src.disconnect(); if(src.onaudioprocess) src.onaudioprocess = null; } }catch(e){}
   /* close() returns a promise and rejects on an already-closed context,
@@ -8187,7 +8205,17 @@ function stop(){
   playing = false;
   clearInterval(watch); watch = 0;
   const dying = nsrc, ctxDying = nctx;
-  try{ nvol && nvol.gain.setTargetAtTime(0, nctx.currentTime, 0.25); }catch(e){}
+  /* A linear ramp rather than setTargetAtTime, because setTarget only
+     approaches zero — at the 800ms teardown it is still a few percent
+     up, and cutting a running source there is a click. This reaches
+     true silence at 600ms, with 200ms to spare. */
+  try{
+    if(nvol){
+      const t = nctx.currentTime;
+      holdGainNow(nvol.gain, t);
+      nvol.gain.linearRampToValueAtTime(0, t + 0.6);
+    }
+  }catch(e){}
   setTimeout(()=>{ scrap(ctxDying, dying); }, 800);
   nsrc = nfilt = nlp = ntrim = nvol = nana = null;
   mBell = mLp = gridF = null; nctx = null;
@@ -8368,7 +8396,14 @@ el('noiseBody').addEventListener('input', e=>{
     trim();
   } else if(t.id === 'nzVol'){
     N.vol = +t.value/100; saveN();
-    if(nvol) nvol.gain.setTargetAtTime(volGain(N.vol), nctx.currentTime, 0.1);
+    /* Same timeline problem: without the hold, moving this during the
+       two-second fade-in did nothing, because the ramp was still booked
+       and took the volume back. */
+    if(nvol){
+      const t = nctx.currentTime;
+      holdGainNow(nvol.gain, t);
+      nvol.gain.setTargetAtTime(volGain(N.vol), t, 0.1);
+    }
   }
 });
 
