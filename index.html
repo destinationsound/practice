@@ -1022,7 +1022,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '18.3';
+const APP_VERSION = '18.4';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -7979,18 +7979,22 @@ let nctx=null, nsrc=null, nfilt=null, nlp=null, ntrim=null, nvol=null, nana=null
 let playing=false, engine='—', trimVal=1, quiet=0, recoveries=0;
 let recovering=false, lastRate=0, watch=0;
 
-async function makeSrc(){
-  if(nctx.audioWorklet){
+/* Takes the context rather than reading nctx, because loading the
+   worklet module is an await and nctx can be null or a different
+   context by the time this comes back — stopping during a start used
+   to land here as "Cannot read properties of null". */
+async function makeSrc(ctx){
+  if(ctx.audioWorklet){
     try{
       const u = URL.createObjectURL(new Blob([PROC], {type:'application/javascript'}));
-      await nctx.audioWorklet.addModule(u);
+      await ctx.audioWorklet.addModule(u);
       URL.revokeObjectURL(u);
       engine = 'worklet';
-      return new AudioWorkletNode(nctx, 'nz-noise', {numberOfInputs:0,
+      return new AudioWorkletNode(ctx, 'nz-noise', {numberOfInputs:0,
         outputChannelCount:[2], processorOptions:{mode:BASE[N.shape], scale:SCALE}});
     }catch(e){ engine = 'main thread'; }
   } else engine = 'main thread';
-  return scriptSrc(nctx);
+  return scriptSrc(ctx);
 }
 
 function applyShape(){
@@ -8010,19 +8014,25 @@ function applyShape(){
    The analyser sits before the volume control: measuring after it meant
    the auto-trim was reading the fader, and once gain hit its ceiling the
    measurement stopped responding while the trim kept climbing. */
+/* Builds against the context it was handed, never against nctx, and
+   abandons what it made if that context is no longer the live one. */
 async function build(){
-  nsrc = await makeSrc();
-  ntrim = nctx.createGain(); ntrim.gain.value = trimVal;
-  nvol = nctx.createGain(); nvol.gain.value = 0;
-  nana = nctx.createAnalyser(); nana.fftSize = 2048;
-  nfilt = nctx.createBiquadFilter(); applyShape();
+  const ctx = nctx;
+  if(!ctx) return;
+  const src = await makeSrc(ctx);
+  if(nctx !== ctx) return scrap(null, src);
+  nsrc = src;
+  ntrim = ctx.createGain(); ntrim.gain.value = trimVal;
+  nvol = ctx.createGain(); nvol.gain.value = 0;
+  nana = ctx.createAnalyser(); nana.fftSize = 2048;
+  nfilt = ctx.createBiquadFilter(); applyShape();
   if(!mBell) initMirrors();
-  nlp = nctx.createBiquadFilter();
+  nlp = ctx.createBiquadFilter();
   nlp.type = 'lowpass'; nlp.Q.value = 0.707; nlp.frequency.value = N.lp;
   nsrc.connect(nfilt); nfilt.connect(nlp); nlp.connect(ntrim); ntrim.connect(nana);
-  nana.connect(nvol); nvol.connect(nctx.destination);
-  nvol.gain.setValueAtTime(0, nctx.currentTime);
-  nvol.gain.linearRampToValueAtTime(volGain(N.vol), nctx.currentTime + 2);
+  nana.connect(nvol); nvol.connect(ctx.destination);
+  nvol.gain.setValueAtTime(0, ctx.currentTime);
+  nvol.gain.linearRampToValueAtTime(volGain(N.vol), ctx.currentTime + 2);
   trim();
 }
 
@@ -8120,15 +8130,52 @@ async function keepAwake(){
   }catch(e){}
 }
 
+/* Every start and every stop takes a number. Anything that builds a
+   graph across an await compares the number it began with against this
+   one, and tears down what it built if the two have parted — which is
+   the same `alive(tok)` rule the round runners use, for the same
+   reason: an await is a place where the user gets to change their mind.
+
+   Without it, stopping during a rebuild left an AudioContext running
+   with no reference to it anywhere, holding the audio session, while
+   the screen said "Not playing" and the watchdog that might have
+   noticed had just been cleared. Nothing in the app could reach it; it
+   ended when the process did. */
+let gen = 0;
+/* Closes a context this module has orphaned. Takes it by value, since
+   by now the module's own handle has moved on or been nulled. */
+function scrap(ctx, src){
+  try{ if(src){ src.disconnect(); if(src.onaudioprocess) src.onaudioprocess = null; } }catch(e){}
+  /* close() returns a promise and rejects on an already-closed context,
+     which a try/catch around the call does not catch — it surfaces as
+     an unhandled rejection. Both guards are needed: the state check for
+     the ordinary case, the .catch for the race where it closes between
+     the check and the call. */
+  try{ if(ctx && ctx.state !== 'closed') ctx.close().catch(()=>{}); }catch(e){}
+}
+
 async function start(){
+  const mine = ++gen;
+  /* A second context while one is already up would be a second wall of
+     noise that only the newer one can stop. */
+  if(nctx){ scrap(nctx, nsrc); nctx = null; nsrc = null; }
+  let ctx;
   try{
-    nctx = new (window.AudioContext||window.webkitAudioContext)();
+    ctx = new (window.AudioContext||window.webkitAudioContext)();
     /* the music-app category, so the ringer switch does not silence it */
     try{ if(navigator.audioSession) navigator.audioSession.type = 'playback'; }catch(e){}
-    if(nctx.state === 'suspended') await nctx.resume();
+    if(ctx.state === 'suspended') await ctx.resume();
   }catch(e){ paint('Could not open audio: ' + e.message); return; }
+  if(mine !== gen) return scrap(ctx, null);
+  nctx = ctx;
   playing = true; trimVal = 1; quiet = 0; lastRate = nctx.sampleRate;
-  await build();
+  try{ await build(); }
+  catch(e){
+    playing = false; nctx = null;
+    scrap(ctx, nsrc);
+    return paint('Could not start: ' + e.message);
+  }
+  if(mine !== gen) return scrap(ctx, nsrc);
   keepAwake();
   paint();
   clearInterval(watch);
@@ -8136,14 +8183,12 @@ async function start(){
 }
 
 function stop(){
+  gen++;
   playing = false;
   clearInterval(watch); watch = 0;
   const dying = nsrc, ctxDying = nctx;
   try{ nvol && nvol.gain.setTargetAtTime(0, nctx.currentTime, 0.25); }catch(e){}
-  setTimeout(()=>{
-    try{ if(dying){ dying.disconnect(); if(dying.onaudioprocess) dying.onaudioprocess = null; } }catch(e){}
-    try{ ctxDying && ctxDying.close(); }catch(e){}
-  }, 800);
+  setTimeout(()=>{ scrap(ctxDying, dying); }, 800);
   nsrc = nfilt = nlp = ntrim = nvol = nana = null;
   mBell = mLp = gridF = null; nctx = null;
   try{ nlock && nlock.release(); }catch(e){}
@@ -8159,18 +8204,29 @@ function stop(){
 async function recover(why){
   if(recovering) return;
   recovering = true; recoveries++;
+  /* Checked after every await below, not just at the top. A rebuild
+     takes a moment, and Stop during that moment used to be ignored —
+     this function would go on to raise a fresh context and graph that
+     nothing held a reference to and no watchdog was still watching. */
+  const mine = gen;
+  let ctx;
   try{
     try{ if(nsrc){ nsrc.disconnect(); if(nsrc.onaudioprocess) nsrc.onaudioprocess = null; } }catch(e){}
     try{ nctx && await nctx.close(); }catch(e){}
     nsrc = nfilt = nlp = ntrim = nvol = nana = null;
     mBell = mLp = gridF = null;
-    nctx = new (window.AudioContext||window.webkitAudioContext)();
+    if(mine !== gen){ nctx = null; recovering = false; return; }
+    ctx = new (window.AudioContext||window.webkitAudioContext)();
     try{ if(navigator.audioSession) navigator.audioSession.type = 'playback'; }catch(e){}
-    if(nctx.state === 'suspended') await nctx.resume();
+    if(ctx.state === 'suspended') await ctx.resume();
+    if(mine !== gen){ recovering = false; return scrap(ctx, null); }
+    nctx = ctx;
     lastRate = nctx.sampleRate; trimVal = 1;
     await build();
+    if(mine !== gen){ recovering = false; return scrap(ctx, nsrc); }
   }catch(e){
     playing = false; clearInterval(watch); watch = 0;
+    scrap(ctx, null);
     paint('Lost the output (' + why + ') and could not restart.');
   }
   quiet = 0; recovering = false;
