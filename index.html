@@ -1022,7 +1022,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '18.5';
+const APP_VERSION = '18.6';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -1112,7 +1112,7 @@ const PARA_TYPES = {
        not a different kind of work. Zero means endless. */
     defaults:()=>({kind:'guided', label:'Bag work',
       rounds:1, roundLen:180, breakLen:60,
-      source:'mixed', order:'inorder', combos:[], call:'read', pace:1,
+      source:'mixed', order:'inorder', combos:[], call:'read', pace:1, poolArch:'all',
       groups:{punch:true,kick:true,knee:true,elbow:false,defense:false,clinch:false},
       level:2, min:2, max:4, rest:4, gap:.1}),
     fields:[
@@ -1131,8 +1131,15 @@ const PARA_TYPES = {
          option rather than a separate switch. */
       {kind:'chips', key:'source', label:'Source',
        options:[['library','Set combos'],['mixed','Mixed'],['free','Freestyle'],
-                ['counter','Block & counter'],['script','Your combos']]},
-      {kind:'note', text:'Set combos come from a list a coach would call. Freestyle builds new ones from which strikes actually feed into each other. Mixed alternates. Your combos calls only what you have written.'},
+                ['counter','Block & counter'],['script','Your combos'],
+                ['pool','Everything you’ve written']]},
+      {kind:'note', text:'Set combos come from a list a coach would call. Freestyle builds new ones from which strikes actually feed into each other. Mixed alternates. Your combos calls only what you have written on this block. Everything you’ve written draws from every combo in every Muay Thai exercise, shuffled.'},
+      /* Archived exercises are in by default because archiving here is
+         housekeeping, not retirement — last block's knee combos get
+         archived to keep the list readable, and they are still worth
+         being called. */
+      {kind:'chips', key:'poolArch', label:'Draw from', when:b=>b.source === 'pool',
+       options:[['all','Everything'],['live','Skip archived']]},
       {kind:'chips', key:'order', label:'Order', when:b=>b.source === 'script',
        options:[['inorder','In order'],['mix','Mix']]},
       /* Only your own combos can be shortened to a name or a beep. A
@@ -1212,7 +1219,8 @@ const PARA_TYPES = {
   },
 };
 const SRC_NAME = {library:'Set combos', mixed:'Mixed', free:'Freestyle',
-                  counter:'Block & counter', script:'Your combos'};
+                  counter:'Block & counter', script:'Your combos',
+                  pool:'Everything written'};
 const paraType = b => PARA_TYPES[b && b.kind] || PARA_TYPES.timed;
 const paraLength = b => paraType(b).length(b);
 const sessionLength = c => (c.paragraphs || []).reduce((n,b)=>n + paraLength(b), 0);
@@ -7275,9 +7283,65 @@ TYPES.muaythai.runParagraphs = async function(tok){
 
 /* Your own combos get called as written; every other source goes to the
    engine with this paragraph's own settings. */
+/* Every combo you have written, from every bag work block of every
+   Muay Thai exercise — not only the block being run. The block's own
+   Source is deliberately ignored: setting a block to Freestyle leaves
+   its combos sitting in it untouched, and dropping them from the pool
+   for a reason invisible from here would be inexplicable a month on.
+
+   Nothing generated can get in. b.combos only ever receives a combo
+   built by hand in the combo editor, so the shipped library and the
+   engine stay out by construction rather than by filtering. */
+function writtenCombos(withArchived){
+  const seen = Object.create(null), out = [];
+  exercises.forEach(e=>{
+    if(!e || e.type !== 'muaythai') return;
+    if(!withArchived && e.archived) return;
+    ((e.cfg && e.cfg.paragraphs) || []).forEach(b=>{
+      if(!b || b.kind !== 'guided') return;
+      (b.combos || []).forEach(ids=>{
+        if(!Array.isArray(ids) || !ids.length) return;
+        /* the same combo written into two exercises is one combo, not
+           two chances of being called */
+        const k = ids.join('>');
+        if(seen[k]) return;
+        seen[k] = 1; out.push(ids);
+      });
+    });
+  });
+  return out;
+}
+
+/* Dealt from a shuffled deck, not rolled for. Independent draws clump —
+   the same combo three times while another never appears — which is
+   exactly wrong when the point is covering everything you know. The
+   deck is kept against the block rather than rebuilt per round, so a
+   long pool is worked all the way through before anything repeats. */
+let deck = [], deckOwner = null;
+function dealCombo(b){
+  const pool = writtenCombos(b.poolArch !== 'live');
+  if(!pool.length) return null;
+  if(deckOwner !== b || !deck.length){
+    deckOwner = b;
+    deck = pool.slice();
+    for(let i = deck.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+  }
+  return deck.pop();
+}
+
 async function callParaCombo(tok, b, n){
   let combo, idx = -1;
-  if(b.source === 'script' && (b.combos || []).length){
+  if(b.source === 'pool'){
+    /* idx stays -1, so this is always read out in full. "Combo one" is
+       meaningless when one is drawn from everything you have ever
+       written — the short calls only make sense against a block's own
+       short, ordered list. */
+    const ids = dealCombo(b);
+    combo = ids ? comboFromIds(ids) : buildCombo(b);
+  } else if(b.source === 'script' && (b.combos || []).length){
     const list = b.combos;
     idx = (b.order === 'mix') ? Math.floor(Math.random() * list.length) : n % list.length;
     combo = comboFromIds(list[idx]);
