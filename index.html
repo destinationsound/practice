@@ -1053,7 +1053,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '18.9';
+const APP_VERSION = '19.0';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -7456,9 +7456,10 @@ async function callParaCombo(tok, b, n){
     if(!goOn(tok)) return;
     el('statusR').textContent = '';
     setRopeAt(0);
-    return restAfterCombo(tok, b);
+    return restAfterCombo(tok, b, combo.length);
   }
 
+  let lastBreak = -1;
   for(let i = 0; i < combo.length; i++){
     await gate();
     if(!goOn(tok)) return;
@@ -7482,19 +7483,47 @@ async function callParaCombo(tok, b, n){
        time. The counter beat is unchanged. */
     if(i < combo.length - 1){
       const counter = combo[i].g === 'defense' && b.source === 'counter' ? 2.2 : 1;
-      const pause = b.gap * counter + (combo[i].hold || 0) + breathe(spoken(combo[i], L));
+      let pause = b.gap * counter + (combo[i].hold || 0) + breathe(spoken(combo[i], L));
+      /* A breath at the end of a phrase, so a ten-move combo arrives as
+         three things rather than ten. Spreading the same seconds evenly
+         would slow the opening punches you already had; put at the
+         break it lands exactly where a long combo comes apart, and it
+         teaches the shape at the same time. */
+      if(phraseEnds(combo, i, lastBreak)){ pause += PHRASE_BEAT; lastBreak = i; }
       if(pause > 0) await wait(pause * 1000);
     }
   }
   highlight(-1);
-  return restAfterCombo(tok, b);
+  return restAfterCombo(tok, b, combo.length);
+}
+
+/* Where a phrase ends. The catalogue already knew: `close` scores how
+   well a move finishes a combo, and it sorts the weapons exactly the
+   way Muay Thai phrases do — every kick, knee and elbow above 1.6,
+   every punch below 1.0. Hands set up, the kick finishes. So this
+   needs nothing typed into the moves and nothing marked in a combo.
+
+   The second clause is for a phrase that never finishes — five punches
+   in a row has no ender in it, and four is about as much as anyone
+   holds at once, so it breaks anyway. */
+const PHRASE_BEAT = 0.55;
+const MAX_PHRASE = 4;
+function phraseEnds(combo, i, lastBreak){
+  if((combo[i].close || 0) >= 1.6) return true;
+  return (i - lastBreak) >= MAX_PHRASE;
 }
 
 /* Lifted out so both deliveries end the same way — the reset between
    combos is the same reset whether the combo was read or beeped. */
-async function restAfterCombo(tok, b){
+async function restAfterCombo(tok, b, len){
   el('statusL').textContent = 'Reset';
-  const rest = (+b.rest || 4) * 1000;
+  /* Recovery in proportion to what you just did. A flat rest gave the
+     same breather after ten moves of clinch work with turns in it as
+     after jab-cross-hook, which is where the back half of a long combo
+     was being paid for. Four moves and under is unchanged; past that it
+     grows, capped so a very long one cannot stall the round. */
+  const grow = Math.min(2.5, Math.max(1, 1 + ((+len || 0) - 4) * 0.15));
+  const rest = (+b.rest || 4) * grow * 1000;
   const cd = countdown(rest);
   while(goOn(tok) && !cd.done()){
     await wait(80);
