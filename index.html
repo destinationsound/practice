@@ -317,10 +317,16 @@
   .clock.warn{color:var(--danger);}
   .sessbar .spacer{flex:1;}
   .stage{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;padding:20px 18px;overflow:hidden;}
-  .strike{display:flex;align-items:baseline;gap:16px;padding:6px 0 6px 14px;border-left:3px solid transparent;opacity:.34;transition:opacity .16s ease,border-color .16s ease,transform .16s ease;}
+  /* Once the type has shrunk as far as it should, the list scrolls and
+     follows the call instead. centring has to give way here: a centred
+     flex column clips its own top when it overflows, so the first moves
+     would become unreachable. */
+  .stage.packed{overflow-y:auto;justify-content:flex-start;scrollbar-width:none;-webkit-overflow-scrolling:touch;}
+  .stage.packed::-webkit-scrollbar{display:none;}
+  .strike{display:flex;align-items:baseline;gap:16px;padding:calc(6px * var(--fit,1)) 0 calc(6px * var(--fit,1)) 14px;border-left:3px solid transparent;opacity:.34;transition:opacity .16s ease,border-color .16s ease,transform .16s ease;}
   .strike.on{opacity:1;border-left-color:var(--accent);transform:translateX(4px);}
   .strike .n{font-family:var(--mono);font-size:17px;color:var(--text);width:1.1em;flex:none;padding-top:.3em;text-align:right;}
-  .strike .t{font-family:var(--display);font-weight:700;text-transform:uppercase;line-height:.98;font-size:clamp(2rem,10.5vw,4.6rem);}
+  .strike .t{font-family:var(--display);font-weight:700;text-transform:uppercase;line-height:.98;font-size:calc(clamp(2rem,10.5vw,4.6rem) * var(--fit,1));}
   .strike.def .t{color:var(--text-dim);font-weight:600;font-style:italic;}
   .strike.def.on .t{color:var(--danger);}
   .foot{padding:0 18px calc(18px + env(safe-area-inset-bottom));flex:none;}
@@ -1078,7 +1084,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '19.2';
+const APP_VERSION = '19.4';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -3775,9 +3781,43 @@ function render(combo){
     `<div class="strike${t.g==='defense'?' def':''}">
        <span class="n">${t.num || '·'}</span><span class="t">${esc(t.label(L))}</span>
      </div>`).join('');
+  fitStage();
 }
+
+/* The stage is a fixed height and the type is sized off viewport width,
+   so nothing stopped a long combo running past the bottom — the last
+   moves of a fourteen-step drill were not on screen at all.
+
+   Shrunk to fit rather than scrolled, because the combo wants reading
+   whole before you start, and a list that moves while you are trying to
+   take it in is worse than smaller type.
+
+   But only down to a floor. Past that the words stop being legible from
+   wherever the phone is propped, and a combo you cannot read is no
+   better than one you cannot see — so below the floor it holds that
+   size and follows the call instead, which highlight() handles. */
+const FIT_FLOOR = .5, FIT_STEP = .08;
+function fitStage(){
+  const st = stage();
+  if(!st) return;
+  st.classList.remove('packed');
+  let f = 1;
+  st.style.setProperty('--fit', f);
+  while(st.scrollHeight > st.clientHeight && f > FIT_FLOOR){
+    f = Math.max(FIT_FLOOR, Math.round((f - FIT_STEP) * 100) / 100);
+    st.style.setProperty('--fit', f);
+  }
+  st.classList.toggle('packed', st.scrollHeight > st.clientHeight);
+}
+
 function highlight(i){
-  stage().querySelectorAll('.strike').forEach((n,j)=>n.classList.toggle('on', j===i));
+  const st = stage();
+  const rows = st.querySelectorAll('.strike');
+  rows.forEach((n,j)=>n.classList.toggle('on', j===i));
+  /* Only when it did not fit. Scrolling a combo that is entirely on
+     screen would move it for no reason. */
+  if(i >= 0 && rows[i] && st.classList.contains('packed'))
+    try{ rows[i].scrollIntoView({block:'center', behavior:'smooth'}); }catch(e){}
 }
 function setRopeAt(frac){
   const rope = el('rope');
@@ -7485,6 +7525,7 @@ async function callParaCombo(tok, b, n){
   }
 
   let lastBreak = -1;
+  const beat = phraseBeat(combo.length);
   for(let i = 0; i < combo.length; i++){
     await gate();
     if(!goOn(tok)) return;
@@ -7514,7 +7555,7 @@ async function callParaCombo(tok, b, n){
          would slow the opening punches you already had; put at the
          break it lands exactly where a long combo comes apart, and it
          teaches the shape at the same time. */
-      if(phraseEnds(combo, i, lastBreak)){ pause += PHRASE_BEAT; lastBreak = i; }
+      if(phraseEnds(combo, i, lastBreak)){ pause += beat; lastBreak = i; }
       if(pause > 0) await wait(pause * 1000);
     }
   }
@@ -7533,6 +7574,15 @@ async function callParaCombo(tok, b, n){
    holds at once, so it breaks anyway. */
 const PHRASE_BEAT = 0.55;
 const MAX_PHRASE = 4;
+/* The same breath is not the same help in a six-move combo and a
+   fourteen-move one. Six and under keeps what it had, because those
+   were never the problem; past that it grows, so the later breaks in a
+   long drill give you longer to get the phrase down before the next
+   one starts. Capped at double, since a pause long enough to forget
+   what you are in the middle of stops being a pause. */
+function phraseBeat(len){
+  return PHRASE_BEAT * Math.min(2, 1 + Math.max(0, (+len || 0) - 6) * 0.11);
+}
 function phraseEnds(combo, i, lastBreak){
   if((combo[i].close || 0) >= 1.6) return true;
   return (i - lastBreak) >= MAX_PHRASE;
