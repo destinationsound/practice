@@ -7,7 +7,8 @@
 <meta name="apple-mobile-web-app-title" content="BETR">
 <meta name="application-name" content="BETR">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="theme-color" content="#FFFFFF">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#2A1114" media="(prefers-color-scheme: dark)">
 <title>BETR</title>
 <style>
   /* ══ THEME ══════════════════════════════════════════════════
@@ -17,6 +18,7 @@
      is a class on <body> and nothing else.
      ══════════════════════════════════════════════════════════ */
   :root{
+    color-scheme:light dark; /* native controls follow too */
     --bg:#FFFFFF;          /* page */
     --bg-raised:#FFFFFF;   /* sheets and panels */
     --surface:#F4F4F2;     /* inputs, pressed states */
@@ -52,13 +54,23 @@
     --accent:#FFC40C;      /* current exercise type, set at runtime */
     --on-accent:#1A1A1D;   /* type ON an accent fill — accents are
                               never used for text, only for fills */
-    --danger:#AE3C2C;
+    --danger:#AE3C2C;      --on-danger:#FFFFFF;
           --display:'Avenir Next Condensed','HelveticaNeue-CondensedBold','Arial Narrow',system-ui,sans-serif;
     --body:-apple-system,BlinkMacSystemFont,system-ui,'Segoe UI',sans-serif;
     --mono:ui-monospace,'SF Mono',Menlo,monospace;
   }
-  /* Ready for later — no UI switches this on yet. */
-  body.dark{
+  /* Follows the system. No switch, no stored preference, no script:
+     a media query re-evaluates by itself, so iOS flipping at sunset
+     flips this with it and there is no flash of the wrong theme before
+     any JavaScript has run.
+
+     One copy of the tokens, inside the query rather than on a class,
+     because nothing toggles a class. A manual Light/Dark/System control
+     would need this restructured — the tokens would have to answer to
+     both a query and a selector — so it is deliberately not pretended
+     to be ready for one. */
+  @media (prefers-color-scheme: dark){
+  :root{
     --bg:#2A1114;
     --bg-raised:#1C0A0D;
     --surface:#3A181C;
@@ -79,8 +91,9 @@
   --t-task:#9A9AA4;      --on-t-task:#1A1A1D;
   --meal:#58A775;        --on-meal:#1A1A1D;
   --k-timed:#7FA8A1;     --k-guided:#D49A63;      --k-counted:#9A8FC4;
-        --danger:#E8503A;
-        }
+        --danger:#E8503A;     --on-danger:#1A1A1D;
+  }
+  }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html,body{height:100%;margin:0;overscroll-behavior:none;}
   body{
@@ -95,6 +108,10 @@
 
   .top{display:flex;align-items:center;gap:12px;padding:14px 18px 12px;border-bottom:1px solid var(--line);flex:none;}
   .top h1{font-family:var(--display);font-weight:700;text-transform:uppercase;font-size:21px;margin:0;flex:1;}
+  .offline{
+    flex:none;border:1px solid var(--line);border-radius:2px;
+    padding:4px 7px;font-size:10px;letter-spacing:.16em;
+  }
   .iconbtn{width:38px;height:38px;border:1px solid var(--line);border-radius:2px;display:grid;place-items:center;color:var(--text-dim);font-size:17px;flex:none;}
   /* Any rule that sets display beats the hidden attribute, so .iconbtn
      was keeping the Back button on screen on the root tabs where the
@@ -174,7 +191,7 @@
      nothing. This makes the failure readable instead. */
   #errBar{
     position:fixed;left:0;right:0;bottom:0;z-index:99;
-    background:var(--danger);color:#fff;padding:12px 16px;
+    background:var(--danger);color:var(--on-danger);padding:12px 16px;
     font-family:var(--mono);font-size:12px;line-height:1.5;
     max-height:45vh;overflow:auto;white-space:pre-wrap;
   }
@@ -443,6 +460,9 @@
        a boundary it has nothing to do with. Up here it costs no scroll
        and never moves. The header's right side was empty, and h1 holds
        flex:1, so it needs no layout of its own. -->
+  <!-- Only ever shown when there is nothing to reach. Silence means
+       online, which is the common case and needs no decoration. -->
+  <span class="eyebrow offline" id="offline" hidden>Offline</span>
   <button class="iconbtn" id="addNew" aria-label="Add new" hidden>+</button>
 </div>
 
@@ -520,6 +540,11 @@
     <input type="file" id="importFile" accept="application/json,.json" hidden>
     <div id="importPanel" hidden></div>
     <p class="note">A backup holds your exercises, history, movements and settings. Importing adds what is missing and never deletes anything you already have — safe to run on a fresh copy of the app.</p>
+
+    <h2 class="sec">Offline</h2>
+    <p class="note" id="swNote"></p>
+    <button class="ghost danger" id="dropCache">Reset the offline copy</button>
+    <p class="note">The app keeps a copy of itself so it opens with no signal — on a plane, or anywhere without reception. It still asks the network first every time, so you are never left on an old version while online. Reset it only if the app seems stuck on a version that is no longer current; it reloads straight away and fetches a fresh copy.</p>
 
     <p class="note" style="margin-top:28px">BETR · v${APP_VERSION}</p>
   </div></section>
@@ -1053,7 +1078,7 @@ function weighted(list){
 const rnd = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
 
 
-const APP_VERSION = '19.0';
+const APP_VERSION = '19.2';
 
 /* ══ data shapes ═══════════════════════════════════════════════
    The four records the whole app is built on. Every field here is
@@ -8623,9 +8648,70 @@ paint();
    ║  NOISE MODULE — END                                          ║
    ╚══════════════════════════════════════════════════════════════╝ */
 
+/* ══ offline ═══════════════════════════════════════════════════
+   The app asks nothing of the network except itself: no fonts, no
+   libraries, no calls out. Voices, the noise generator, the bells and
+   every byte of your history are already on the device. So one cached
+   file is the whole of offline — there is no partial version of this
+   where some screens work.
+
+   The worker is a separate file because it has to be; a service worker
+   cannot be inlined, and blob and data URLs are refused. index.html and
+   sw.js therefore travel together.
+
+   Registration failing is not worth reporting. It means no offline
+   copy, which is where the app already was. */
+let servedFromCache = false;
+
+function paintOffline(){
+  const off = !navigator.onLine || servedFromCache;
+  const el2 = el('offline');
+  if(el2) el2.hidden = !off;
+  const note = el('swNote');
+  if(note) note.textContent = !('serviceWorker' in navigator)
+    ? 'This browser cannot keep an offline copy.'
+    : servedFromCache ? 'Running from the offline copy — no network reached.'
+    : navigator.onLine ? 'Ready. A copy is kept so the app opens without a signal.'
+    : 'No network. Running from the offline copy.';
+}
+
+addEventListener('online', paintOffline);
+addEventListener('offline', paintOffline);
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+  /* navigator.onLine cannot answer this: a connection that goes
+     nowhere still reports as online, which is exactly what aeroplane
+     wifi looks like before you have paid. Only the worker knows
+     whether what you are running came off the network. */
+  navigator.serviceWorker.addEventListener('message', e=>{
+    if(e.data && e.data.servedFrom){
+      servedFromCache = e.data.servedFrom === 'cache';
+      paintOffline();
+    }
+  });
+  navigator.serviceWorker.ready.then(reg=>{
+    const sw = reg.active || navigator.serviceWorker.controller;
+    if(sw) sw.postMessage('whence');
+  }).catch(()=>{});
+}
+
+el('dropCache').addEventListener('click', e=>
+  confirmTap(e.currentTarget, 'Tap again to reset', 'Reset the offline copy', async ()=>{
+    try{
+      const ctrl = navigator.serviceWorker && navigator.serviceWorker.controller;
+      if(ctrl) ctrl.postMessage('drop');
+      if(window.caches) for(const k of await caches.keys()) await caches.delete(k);
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r=>r.unregister()));
+    }catch(err){}
+    location.reload();
+  }));
+
 resetAccent();
 renderHome();
 renderStats();
+paintOffline();
 show('home');
 </script>
 </body>
